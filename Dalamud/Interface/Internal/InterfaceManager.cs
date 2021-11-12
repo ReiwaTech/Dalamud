@@ -498,13 +498,18 @@ namespace Dalamud.Interface.Internal
             fontConfig.PixelSnapH = true;
 
             var fontPathJp = Path.Combine(dalamud.AssetDirectory.FullName, "UIRes", "NotoSansCJKjp-Medium.otf");
+            var fontPathSc = Path.Combine(dalamud.AssetDirectory.FullName, "UIRes", "NotoSansCJKsc-Medium.otf");
 
             if (!File.Exists(fontPathJp))
                 ShowFontError(fontPathJp);
+            if (!File.Exists(fontPathSc))
+                ShowFontError(fontPathSc);
 
             var japaneseRangeHandle = GCHandle.Alloc(GlyphRangesJapanese.GlyphRanges, GCHandleType.Pinned);
+            var chineseRangeHandle = GCHandle.Alloc(GlyphRangesChinese.GlyphRanges, GCHandleType.Pinned);
 
-            DefaultFont = ImGui.GetIO().Fonts.AddFontFromFileTTF(fontPathJp, 17.0f, null, japaneseRangeHandle.AddrOfPinnedObject());
+            // DefaultFont = ImGui.GetIO().Fonts.AddFontFromFileTTF(fontPathJp, 17.0f, null, japaneseRangeHandle.AddrOfPinnedObject());
+            DefaultFont = ImGui.GetIO().Fonts.AddFontFromFileTTF(fontPathSc, 17.0f, null, chineseRangeHandle.AddrOfPinnedObject());
 
             var fontPathGame = Path.Combine(dalamud.AssetDirectory.FullName, "UIRes", "gamesym.ttf");
 
@@ -560,6 +565,7 @@ namespace Dalamud.Interface.Internal
             this.fontBuildSignal.Set();
 
             fontConfig.Destroy();
+            chineseRangeHandle.Free();
             japaneseRangeHandle.Free();
             gameRangeHandle.Free();
             iconRangeHandle.Free();
