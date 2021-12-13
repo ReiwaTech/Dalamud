@@ -31,7 +31,7 @@ namespace Dalamud.Plugin.Internal
         /// <summary>
         /// The current Dalamud API level, used to handle breaking changes. Only plugins with this level will be loaded.
         /// </summary>
-        public const int DalamudApiLevel = 4;
+        public const int DalamudApiLevel = 5;
 
         private static readonly ModuleLog Log = new("PLUGINM");
 
@@ -952,7 +952,7 @@ namespace Dalamud.Plugin.Internal
         public bool IsManifestBanned(PluginManifest manifest)
         {
             var configuration = Service<DalamudConfiguration>.Get();
-            return configuration.LoadBannedPlugins || this.bannedPlugins.Any(ban => ban.Name == manifest.InternalName && ban.AssemblyVersion >= manifest.AssemblyVersion);
+            return !configuration.LoadBannedPlugins && this.bannedPlugins.Any(ban => ban.Name == manifest.InternalName && ban.AssemblyVersion >= manifest.AssemblyVersion);
         }
 
         /// <summary>

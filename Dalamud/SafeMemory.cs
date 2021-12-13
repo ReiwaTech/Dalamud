@@ -191,6 +191,33 @@ namespace Dalamud
         }
 
         /// <summary>
+        /// Marshals data from an unmanaged block of memory to a managed object.
+        /// </summary>
+        /// <typeparam name="T">The type to create.</typeparam>
+        /// <param name="addr">The address to read from.</param>
+        /// <returns>The read object, or null, if it could not be read.</returns>
+        public static T? PtrToStructure<T>(IntPtr addr) where T : struct => (T?)PtrToStructure(addr, typeof(T));
+
+        /// <summary>
+        /// Marshals data from an unmanaged block of memory to a managed object.
+        /// </summary>
+        /// <param name="addr">The address to read from.</param>
+        /// <param name="type">The type to create.</param>
+        /// <returns>The read object, or null, if it could not be read.</returns>
+        public static object? PtrToStructure(IntPtr addr, Type type)
+        {
+            var size = Marshal.SizeOf(type);
+
+            if (!ReadBytes(addr, size, out var buffer))
+                return null;
+
+            var mem = new LocalMemory(size);
+            mem.Write(buffer);
+
+            return mem.Read(type);
+        }
+
+        /// <summary>
         /// Get the size of the passed type.
         /// </summary>
         /// <typeparam name="T">The type to inspect.</typeparam>
@@ -248,6 +275,8 @@ namespace Dalamud
             }
 
             public T Read<T>(int offset = 0) => (T)Marshal.PtrToStructure(this.hGlobal + offset, typeof(T));
+
+            public object? Read(Type type, int offset = 0) => Marshal.PtrToStructure(this.hGlobal + offset, type);
 
             public void Write(byte[] data, int index = 0) => Marshal.Copy(data, index, this.hGlobal, this.size);
 

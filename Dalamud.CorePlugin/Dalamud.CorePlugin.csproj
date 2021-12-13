@@ -16,7 +16,7 @@
     </PropertyGroup>
 
     <PropertyGroup Label="Build">
-        <OutputPath>$(AppData)\XIVLauncher\devPlugins\Dalamud.CorePlugin</OutputPath>
+        <OutputPath>bin\$(Configuration)</OutputPath>
         <DebugSymbols>true</DebugSymbols>
         <DebugType>full</DebugType>
         <Optimize>false</Optimize>
@@ -27,8 +27,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Lumina" Version="3.3.0" />
-        <PackageReference Include="Lumina.Excel" Version="5.50.0" />
+        <PackageReference Include="Lumina" Version="3.5.0" />
+        <PackageReference Include="Lumina.Excel" Version="6.0.1" />
         <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
         <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.333">
             <PrivateAssets>all</PrivateAssets>

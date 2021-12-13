@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
@@ -10,6 +11,7 @@ using Dalamud.Configuration.Internal;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Gui;
 using Dalamud.Game.Internal;
+using Dalamud.Interface.Colors;
 using Dalamud.Interface.Internal.ManagedAsserts;
 using Dalamud.Interface.Internal.Windows;
 using Dalamud.Interface.Internal.Windows.SelfTest;
@@ -23,6 +25,7 @@ using Dalamud.Utility;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using ImGuiNET;
+using ImGuiScene;
 using PInvoke;
 using Serilog.Events;
 
@@ -48,6 +51,8 @@ namespace Dalamud.Interface.Internal
         private readonly SettingsWindow settingsWindow;
         private readonly SelfTestWindow selfTestWindow;
         private readonly StyleEditorWindow styleEditorWindow;
+
+        private readonly TextureWrap logoTexture;
 
         private ulong frameCount = 0;
 
@@ -99,7 +104,12 @@ namespace Dalamud.Interface.Internal
 
             ImGuiManagedAsserts.AssertsEnabled = configuration.AssertsEnabledAtStartup;
 
-            Service<InterfaceManager>.Get().Draw += this.OnDraw;
+            var interfaceManager = Service<InterfaceManager>.Get();
+            interfaceManager.Draw += this.OnDraw;
+            var dalamud = Service<Dalamud>.Get();
+
+            this.logoTexture =
+                interfaceManager.LoadImage(Path.Combine(dalamud.AssetDirectory.FullName, "UIRes", "logo.png"))!;
         }
 
         /// <summary>
@@ -121,8 +131,11 @@ namespace Dalamud.Interface.Internal
         {
             Service<InterfaceManager>.Get().Draw -= this.OnDraw;
 
+            this.logoTexture.Dispose();
+
             this.WindowSystem.RemoveAllWindows();
 
+            this.changelogWindow.Dispose();
             this.creditsWindow.Dispose();
             this.consoleWindow.Dispose();
             this.pluginWindow.Dispose();
@@ -340,6 +353,8 @@ namespace Dalamud.Interface.Internal
 
             if (!this.isImGuiDrawDevMenu && !condition.Any())
             {
+                var config = Service<DalamudConfiguration>.Get();
+
                 ImGui.PushStyleColor(ImGuiCol.Button, Vector4.Zero);
                 ImGui.PushStyleColor(ImGuiCol.ButtonActive, Vector4.Zero);
                 ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Vector4.Zero);
@@ -349,18 +364,36 @@ namespace Dalamud.Interface.Internal
                 ImGui.PushStyleColor(ImGuiCol.BorderShadow, new Vector4(0, 0, 0, 1));
                 ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0, 0, 0, 1));
 
-                var mainViewportPos = ImGui.GetMainViewport().Pos;
-                ImGui.SetNextWindowPos(new Vector2(mainViewportPos.X, mainViewportPos.Y), ImGuiCond.Always);
+                ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+                ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, Vector2.Zero);
+                ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0);
+
+                var windowPos = ImGui.GetMainViewport().Pos + new Vector2(40);
+                ImGui.SetNextWindowPos(windowPos, ImGuiCond.Always);
                 ImGui.SetNextWindowBgAlpha(1);
+
+                var imageSize = new Vector2(90);
 
                 if (ImGui.Begin("DevMenu Opener", ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoSavedSettings))
                 {
-                    if (ImGui.Button("###devMenuOpener", new Vector2(40, 25)))
+                    var cursor = ImGui.GetCursorPos();
+                    if (ImGui.Button("###devMenuOpener", imageSize))
                         this.isImGuiDrawDevMenu = true;
+
+#if !DEBUG
+                    if (config.DoDalamudTest)
+                    {
+#endif
+                        ImGui.SetCursorPos(cursor);
+                        ImGui.Image(this.logoTexture.ImGuiHandle, imageSize);
+#if !DEBUG
+                    }
+#endif
 
                     ImGui.End();
                 }
 
+                ImGui.PopStyleVar(3);
                 ImGui.PopStyleColor(8);
             }
         }
@@ -495,6 +528,7 @@ namespace Dalamud.Interface.Internal
                         var startInfo = Service<DalamudStartInfo>.Get();
                         ImGui.MenuItem(Util.AssemblyVersion, false);
                         ImGui.MenuItem(startInfo.GameVersion.ToString(), false);
+                        ImGui.MenuItem($"CS: {Util.GetGitHashClientStructs()}", false);
 
                         ImGui.EndMenu();
                     }
@@ -618,7 +652,7 @@ namespace Dalamud.Interface.Internal
 
                         ImGui.Separator();
 
-                        if (ImGui.MenuItem("Load all API levels", null, configuration.LoadAllApiLevels))
+                        if (ImGui.MenuItem("Load all API levels (ONLY FOR DEVELOPERS!!!)", null, configuration.LoadAllApiLevels))
                         {
                             configuration.LoadAllApiLevels = !configuration.LoadAllApiLevels;
                             configuration.Save();

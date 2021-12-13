@@ -1,4 +1,7 @@
 using System;
+using System.Linq;
+
+using Dalamud.Game.ClientState.JobGauge.Enums;
 
 namespace Dalamud.Game.ClientState.JobGauge.Types
 {
@@ -17,8 +20,21 @@ namespace Dalamud.Game.ClientState.JobGauge.Types
         }
 
         /// <summary>
-        /// Gets the number of Chakra available.
+        /// Gets the types of Chakra available.
         /// </summary>
-        public byte Chakra => this.Struct->Chakra;
+        /// <remarks>
+        /// This will always return an array of size 3, inactive Chakra are represented by <see cref="Chakra.NONE"/>.
+        /// </remarks>
+        public Chakra[] Chakra => this.Struct->CurrentChakra.Select(c => (Chakra)c).ToArray();
+
+        /// <summary>
+        /// Gets the types of Nadi available.
+        /// </summary>
+        public Nadi Nadi => (Nadi)this.Struct->Nadi;
+
+        /// <summary>
+        /// Gets the time remaining that Blitz is active.
+        /// </summary>
+        public ushort BlitzTimeRemaining => this.Struct->BlitzTimeRemaining;
     }
 }

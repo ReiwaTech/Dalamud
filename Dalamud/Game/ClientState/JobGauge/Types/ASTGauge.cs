@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 using Dalamud.Game.ClientState.JobGauge.Enums;
 
@@ -22,19 +23,24 @@ namespace Dalamud.Game.ClientState.JobGauge.Types
         /// Gets the currently drawn <see cref="CardType"/>.
         /// </summary>
         /// <returns>Currently drawn <see cref="CardType"/>.</returns>
-        public CardType DrawnCard => (CardType)this.Struct->Card;
+        public CardType DrawnCard => (CardType)(this.Struct->Card & 0xF);
+
+        /// <summary>
+        /// Gets the currently drawn crown <see cref="CardType"/>.
+        /// </summary>
+        /// <returns>Currently drawn crown <see cref="CardType"/>.</returns>
+        public CardType DrawnCrownCard => this.Struct->Card - this.DrawnCard;
+
+        /// <summary>
+        /// Gets the <see cref="SealType"/>s currently active.
+        /// </summary>
+        public SealType[] Seals => this.Struct->CurrentSeals.Select(seal => (SealType)seal).ToArray();
 
         /// <summary>
         /// Check if a <see cref="SealType"/> is currently active on the divination gauge.
         /// </summary>
         /// <param name="seal">The <see cref="SealType"/> to check for.</param>
         /// <returns>If the given Seal is currently divined.</returns>
-        public unsafe bool ContainsSeal(SealType seal)
-        {
-            if (this.Struct->Seals[0] == (byte)seal) return true;
-            if (this.Struct->Seals[1] == (byte)seal) return true;
-            if (this.Struct->Seals[2] == (byte)seal) return true;
-            return false;
-        }
+        public unsafe bool ContainsSeal(SealType seal) => this.Seals.Contains(seal);
     }
 }
