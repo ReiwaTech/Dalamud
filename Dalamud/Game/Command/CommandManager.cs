@@ -40,6 +40,7 @@ public sealed class CommandManager : IServiceType, IDisposable
             ClientLanguage.English => this.commandRegexEn,
             ClientLanguage.German => this.commandRegexDe,
             ClientLanguage.French => this.commandRegexFr,
+            ClientLanguage.ChineseSimplified => this.commandRegexCn,
             _ => this.currentLangCommandRegex,
         };
 

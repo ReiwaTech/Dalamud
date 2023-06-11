@@ -684,19 +684,21 @@ internal class InterfaceManager : IDisposable, IServiceType
             fontConfig.OversampleH = 1;
             fontConfig.OversampleV = 1;
 
-            var fontPathJp = Path.Combine(dalamud.AssetDirectory.FullName, "UIRes", "NotoSansCJKjp-Regular.otf");
-            if (!File.Exists(fontPathJp))
-                fontPathJp = Path.Combine(dalamud.AssetDirectory.FullName, "UIRes", "NotoSansCJKjp-Medium.otf");
-            if (!File.Exists(fontPathJp))
-                ShowFontError(fontPathJp);
-            Log.Verbose("[FONT] fontPathJp = {0}", fontPathJp);
+            var fontPathSc = Path.Combine(dalamud.AssetDirectory.FullName, "UIRes", "NotoSansCJKsc-Regular.otf");
+            if (!File.Exists(fontPathSc))
+                fontPathSc = Path.Combine(dalamud.AssetDirectory.FullName, "UIRes", "NotoSansCJKsc-Medium.otf");
+            if (!File.Exists(fontPathSc))
+                ShowFontError(fontPathSc);
+            Log.Verbose("[FONT] fontPathSc = {0}", fontPathSc);
 
+            /*
             var fontPathKr = Path.Combine(dalamud.AssetDirectory.FullName, "UIRes", "NotoSansCJKkr-Regular.otf");
             if (!File.Exists(fontPathKr))
                 fontPathKr = Path.Combine(dalamud.AssetDirectory.FullName, "UIRes", "NotoSansKR-Regular.otf");
             if (!File.Exists(fontPathKr))
                 fontPathKr = null;
             Log.Verbose("[FONT] fontPathKr = {0}", fontPathKr);
+            */
 
             // Default font
             Log.Verbose("[FONT] SetupFonts - Default font");
@@ -716,15 +718,16 @@ internal class InterfaceManager : IDisposable, IServiceType
             }
             else
             {
-                var japaneseRangeHandle = GCHandle.Alloc(GlyphRangesJapanese.GlyphRanges, GCHandleType.Pinned);
-                garbageList.Add(japaneseRangeHandle);
+                var chineseRangeHandle = GCHandle.Alloc(GlyphRangesChinese.GlyphRanges, GCHandleType.Pinned);
+                garbageList.Add(chineseRangeHandle);
 
-                fontConfig.GlyphRanges = japaneseRangeHandle.AddrOfPinnedObject();
+                fontConfig.GlyphRanges = chineseRangeHandle.AddrOfPinnedObject();
                 fontConfig.PixelSnapH = true;
-                DefaultFont = ioFonts.AddFontFromFileTTF(fontPathJp, fontConfig.SizePixels, fontConfig);
+                DefaultFont = ioFonts.AddFontFromFileTTF(fontPathSc, fontConfig.SizePixels, fontConfig);
                 this.loadedFontInfo[DefaultFont] = fontInfo;
             }
 
+            /*
             if (fontPathKr != null && Service<DalamudConfiguration>.Get().EffectiveLanguage == "ko")
             {
                 fontConfig.MergeMode = true;
@@ -733,6 +736,7 @@ internal class InterfaceManager : IDisposable, IServiceType
                 ioFonts.AddFontFromFileTTF(fontPathKr, fontConfig.SizePixels, fontConfig);
                 fontConfig.MergeMode = false;
             }
+            */
 
             // FontAwesome icon font
             Log.Verbose("[FONT] SetupFonts - FontAwesome icon font");
@@ -830,7 +834,7 @@ internal class InterfaceManager : IDisposable, IServiceType
                         garbageList.Add(rangeHandle);
                         fontConfig.PixelSnapH = true;
 
-                        var sizedFont = ioFonts.AddFontFromFileTTF(fontPathJp, fontSize * io.FontGlobalScale, fontConfig, rangeHandle.AddrOfPinnedObject());
+                        var sizedFont = ioFonts.AddFontFromFileTTF(fontPathSc, fontSize * io.FontGlobalScale, fontConfig, rangeHandle.AddrOfPinnedObject());
                         this.loadedFontInfo[sizedFont] = fontInfo;
                         foreach (var request in requests)
                             request.FontInternal = sizedFont;
