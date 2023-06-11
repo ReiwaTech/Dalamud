@@ -4,12 +4,15 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
-using System.Net.Http;
 using System.Numerics;
+using System.Net;
+using System.Net.Http;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
-
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using Dalamud.Configuration;
 using Dalamud.Configuration.Internal;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -20,6 +23,7 @@ using Dalamud.Networking.Http;
 using ImGuiNET;
 using Microsoft.Win32;
 using Serilog;
+using Newtonsoft.Json;
 
 namespace Dalamud.Utility;
 
@@ -542,6 +546,24 @@ public static class Util
     /// </summary>
     /// <returns>If Windows 11 has been detected.</returns>
     public static bool IsWindows11() => Environment.OSVersion.Version.Build >= 22000;
+
+    /// <summary>
+    /// Set the proxy.
+    /// </summary>
+    /// <param name="useManualProxy">System proxy/Manual proxy.</param>
+    /// <param name="proxyProtocol">The protocol of proxy.</param>
+    /// <param name="proxyHost">The proxy host.</param>
+    /// <param name="proxyPort">The proxy port.</param>
+    public static void SetProxy(bool useManualProxy, string proxyProtocol, string proxyHost, int proxyPort)
+    {
+        if (useManualProxy)
+        {
+            var proxy = new WebProxy($"{proxyProtocol}://{proxyHost}:{proxyPort}", true);
+            WebRequest.DefaultWebProxy = proxy;
+            HttpClient.DefaultProxy = proxy;
+        }
+
+    }
 
     /// <summary>
     /// Open a link in the default browser.

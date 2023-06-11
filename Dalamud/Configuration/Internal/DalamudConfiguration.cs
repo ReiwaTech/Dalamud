@@ -8,6 +8,7 @@ using Dalamud.Game.Text;
 using Dalamud.Interface.Style;
 using Dalamud.Utility;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Serilog;
 using Serilog.Events;
 
@@ -277,6 +278,26 @@ internal sealed class DalamudConfiguration : IServiceType
     public bool DisableRmtFiltering { get; set; }
 
     /// <summary>
+    /// Gets or sets a value whether or not Dalamud use manual proxy settings.
+    /// </summary>
+    public bool UseManualProxy { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value what type proxy Dalamud will use.
+    /// </summary>
+    public string ProxyProtocol { get; set; } = "socks5";
+
+    /// <summary>
+    /// Gets or sets the proxy host address.
+    /// </summary>
+    public string ProxyHost { get; set; } = "127.0.0.1";
+
+    /// <summary>
+    /// Gets or sets the proxy port.
+    /// </summary>
+    public int ProxyPort { get; set; } = 1080;
+
+    /// <summary>
     /// Gets or sets the order of DTR elements, by title.
     /// </summary>
     public List<string>? DtrOrder { get; set; }
@@ -401,6 +422,9 @@ internal sealed class DalamudConfiguration : IServiceType
         deserialized ??= new DalamudConfiguration();
         deserialized.configPath = path;
 
+        var splitedValue = deserialized.ProxyHost.Split("://");
+        if (splitedValue.Length >= 2)
+            deserialized.ProxyHost = splitedValue[1];
         return deserialized;
     }
 
