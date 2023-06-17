@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        branches: [master]
+        branches: [cn]
 
     defaults: 
       run:
@@ -36,7 +36,7 @@ jobs:
         git reset --hard origin/${{ matrix.branches }}
         cd lib/FFXIVClientStructs
         git fetch
-        git reset --hard origin/main
+        git reset --hard origin/cn
         cd ../..
         git add lib/FFXIVClientStructs
         git commit --message "Update ClientStructs"
