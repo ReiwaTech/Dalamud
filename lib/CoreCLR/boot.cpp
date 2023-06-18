@@ -85,7 +85,7 @@ int InitializeClrAndGetEntryPoint(
         */
        
         std::filesystem::path fs_app_data(module_path);
-        dotnet_path = _wcsdup(fs_app_data.parent_path().append("..").append("..").append("..").append("runtime").c_str());
+        dotnet_path = _wcsdup(fs_app_data.parent_path().parent_path().append("runtime").c_str());
     }
 
     // =========================================================================== //
