@@ -11,6 +11,7 @@ using Dalamud.Game.Gui.Dtr;
 using Dalamud.Interface.GameFonts;
 using Dalamud.Interface.Internal;
 using Dalamud.IoC.Internal;
+using Dalamud.Logging;
 using Dalamud.Logging.Internal;
 using Dalamud.Plugin.Internal.Exceptions;
 using Dalamud.Plugin.Internal.Loader;
@@ -180,9 +181,14 @@ internal class LocalPlugin : IDisposable
     public AssemblyName? AssemblyName { get; private set; }
 
     /// <summary>
-    /// Gets the plugin name, directly from the plugin or if it is not loaded from the manifest.
+    /// Gets the plugin name from the manifest.
     /// </summary>
     public string Name => this.Manifest.Name;
+
+    /// <summary>
+    /// Gets the plugin internal name from the manifest.
+    /// </summary>
+    public string InternalName => this.Manifest.InternalName;
 
     /// <summary>
     /// Gets an optional reason, if the plugin is banned.
@@ -238,6 +244,11 @@ internal class LocalPlugin : IDisposable
     /// </summary>
     public bool IsDev => this is LocalDevPlugin;
 
+    /// <summary>
+    /// Gets the service scope for this plugin.
+    /// </summary>
+    public IServiceScope? ServiceScope { get; private set; }
+
     /// <inheritdoc/>
     public void Dispose()
     {
@@ -258,6 +269,9 @@ internal class LocalPlugin : IDisposable
 
         this.DalamudInterface?.ExplicitDispose();
         this.DalamudInterface = null;
+
+        this.ServiceScope?.Dispose();
+        this.ServiceScope = null;
 
         this.pluginType = null;
         this.pluginAssembly = null;
@@ -302,8 +316,13 @@ internal class LocalPlugin : IDisposable
                 case PluginState.Loaded:
                     throw new InvalidPluginOperationException($"Unable to load {this.Name}, already loaded");
                 case PluginState.LoadError:
-                    throw new InvalidPluginOperationException(
-                        $"Unable to load {this.Name}, load previously faulted, unload first");
+                    if (!this.IsDev)
+                    {
+                        throw new InvalidPluginOperationException(
+                            $"Unable to load {this.Name}, load previously faulted, unload first");
+                    }
+
+                    break;
                 case PluginState.UnloadError:
                     if (!this.IsDev)
                     {
@@ -410,17 +429,20 @@ internal class LocalPlugin : IDisposable
             PluginManager.PluginLocations[this.pluginType.Assembly.FullName] = new PluginPatchData(this.DllFile);
 
             this.DalamudInterface =
-                new DalamudPluginInterface(this.pluginAssembly.GetName().Name!, this.DllFile, reason, this.IsDev, this.Manifest);
+                new DalamudPluginInterface(this, reason);
+
+            this.ServiceScope = ioc.GetScope();
+            this.ServiceScope.RegisterPrivateScopes(this); // Add this LocalPlugin as a private scope, so services can get it
 
             if (this.Manifest.LoadSync && this.Manifest.LoadRequiredState is 0 or 1)
             {
                 this.instance = await framework.RunOnFrameworkThread(
-                                    () => ioc.CreateAsync(this.pluginType!, this.DalamudInterface!)) as IDalamudPlugin;
+                                    () => this.ServiceScope.CreateAsync(this.pluginType!, this.DalamudInterface!)) as IDalamudPlugin;
             }
             else
             {
                 this.instance =
-                    await ioc.CreateAsync(this.pluginType!, this.DalamudInterface!) as IDalamudPlugin;
+                    await this.ServiceScope.CreateAsync(this.pluginType!, this.DalamudInterface!) as IDalamudPlugin;
             }
 
             if (this.instance == null)
@@ -466,6 +488,7 @@ internal class LocalPlugin : IDisposable
     {
         var configuration = Service<DalamudConfiguration>.Get();
         var framework = Service<Framework>.GetNullable();
+        var ioc = await Service<ServiceContainer>.GetAsync();
 
         await this.pluginLoadStateLock.WaitAsync();
         try
@@ -503,6 +526,9 @@ internal class LocalPlugin : IDisposable
 
             this.DalamudInterface?.ExplicitDispose();
             this.DalamudInterface = null;
+
+            this.ServiceScope?.Dispose();
+            this.ServiceScope = null;
 
             this.pluginType = null;
             this.pluginAssembly = null;
@@ -559,7 +585,9 @@ internal class LocalPlugin : IDisposable
             case PluginState.Unloading:
             case PluginState.Loaded:
             case PluginState.LoadError:
-                throw new InvalidPluginOperationException($"Unable to enable {this.Name}, still loaded");
+                if (!this.IsDev)
+                    throw new InvalidPluginOperationException($"Unable to enable {this.Name}, still loaded");
+                break;
             case PluginState.Unloaded:
                 break;
             case PluginState.UnloadError:

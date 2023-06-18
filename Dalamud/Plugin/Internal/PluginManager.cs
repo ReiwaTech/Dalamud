@@ -41,6 +41,9 @@ namespace Dalamud.Plugin.Internal;
 // DalamudTextureWrap registers textures to dispose with IM
 [InherentDependency<InterfaceManager>]
 
+// LocalPlugin uses ServiceContainer to create scopes
+[InherentDependency<ServiceContainer>]
+
 #pragma warning restore SA1015
 internal partial class PluginManager : IDisposable, IServiceType
 {
@@ -1063,8 +1066,9 @@ Thanks and have fun!";
     /// </summary>
     /// <param name="ignoreDisabled">Ignore disabled plugins.</param>
     /// <param name="dryRun">Perform a dry run, don't install anything.</param>
+    /// <param name="autoUpdate">If this action was performed as part of an auto-update.</param>
     /// <returns>Success or failure and a list of updated plugin metadata.</returns>
-    public async Task<List<PluginUpdateStatus>> UpdatePluginsAsync(bool ignoreDisabled, bool dryRun)
+    public async Task<List<PluginUpdateStatus>> UpdatePluginsAsync(bool ignoreDisabled, bool dryRun, bool autoUpdate = false)
     {
         Log.Information("Starting plugin update");
 
@@ -1089,6 +1093,9 @@ Thanks and have fun!";
         }
 
         this.NotifyInstalledPluginsChanged();
+        this.NotifyPluginsForStateChange(
+            autoUpdate ? PluginListInvalidationKind.AutoUpdate : PluginListInvalidationKind.Update,
+            updatedList.Select(x => x.InternalName));
 
         Log.Information("Plugin update OK.");
 
@@ -1389,6 +1396,20 @@ Thanks and have fun!";
         this.DetectAvailablePluginUpdates();
 
         this.OnInstalledPluginsChanged?.InvokeSafely();
+    }
+
+    private void NotifyPluginsForStateChange(PluginListInvalidationKind kind, IEnumerable<string> affectedInternalNames)
+    {
+        foreach (var installedPlugin in this.InstalledPlugins)
+        {
+            if (!installedPlugin.IsLoaded || installedPlugin.DalamudInterface == null)
+                continue;
+
+            installedPlugin.DalamudInterface.NotifyActivePluginsChanged(
+                kind,
+                // ReSharper disable once PossibleMultipleEnumeration
+                affectedInternalNames.Contains(installedPlugin.Manifest.InternalName));
+        }
     }
 
     private static class Locs
