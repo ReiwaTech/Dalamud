@@ -281,8 +281,8 @@ namespace Dalamud.Injector
                 i--;
             }
 
-            var appDataDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            var xivlauncherDir = Path.Combine(appDataDir, "XIVLauncher");
+            var launcherDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            var xivlauncherDir = Path.Combine(Path.GetDirectoryName(launcherDir), "XIVLauncher");
 
             workingDirectory ??= Directory.GetCurrentDirectory();
             configurationPath ??= Path.Combine(xivlauncherDir, "dalamudConfig.json");
