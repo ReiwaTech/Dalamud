@@ -369,7 +369,7 @@ Thanks and have fun!";
     /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     public async Task SetPluginReposFromConfigAsync(bool notify)
     {
-        var repos = new List<PluginRepository>() { PluginRepository.MainRepo };
+        var repos = new List<PluginRepository>() { /* PluginRepository.MainRepo */ };
         repos.AddRange(this.configuration.ThirdRepoList
                            .Where(repo => repo.IsEnabled)
                            .Select(repo => new PluginRepository(repo.Url, repo.IsEnabled)));
