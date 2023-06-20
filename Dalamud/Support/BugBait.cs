@@ -26,6 +26,8 @@ internal static class BugBait
     /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     public static async Task SendFeedback(PluginManifest plugin, bool isTesting, string content, string reporter, bool includeException)
     {
+        throw new System.Exception("Feedbacks cannot be sent in this build.");
+
         if (content.IsNullOrWhitespace())
             return;
 
