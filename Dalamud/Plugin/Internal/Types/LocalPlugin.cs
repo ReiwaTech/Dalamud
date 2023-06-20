@@ -223,14 +223,15 @@ internal class LocalPlugin : IDisposable
     /// <summary>
     /// Gets a value indicating whether or not this plugin is orphaned(belongs to a repo) or not.
     /// </summary>
-    public bool IsOrphaned => !this.IsDev &&
+
+    public bool IsOrphaned => false && !this.IsDev &&
                               !this.Manifest.InstalledFromUrl.IsNullOrEmpty() && // TODO(api8): Remove this, all plugins will have a proper flag
                               this.GetSourceRepository() == null;
 
     /// <summary>
     /// Gets a value indicating whether or not this plugin is serviced(repo still exists, but plugin no longer does).
     /// </summary>
-    public bool IsDecommissioned => !this.IsDev &&
+    public bool IsDecommissioned => false && !this.IsDev &&
                                     this.GetSourceRepository()?.State == PluginRepositoryState.Success &&
                                     this.GetSourceRepository()?.PluginMaster?.FirstOrDefault(x => x.InternalName == this.Manifest.InternalName) == null;
 

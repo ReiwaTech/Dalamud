@@ -50,7 +50,7 @@ internal class PluginRepository
     public PluginRepository(string pluginMasterUrl, bool isEnabled)
     {
         this.PluginMasterUrl = pluginMasterUrl;
-        this.IsThirdParty = pluginMasterUrl != MainRepoUrl;
+        this.IsThirdParty = false && pluginMasterUrl != MainRepoUrl;
         this.IsEnabled = isEnabled;
     }
 
