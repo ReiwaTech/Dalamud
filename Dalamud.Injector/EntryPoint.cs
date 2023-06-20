@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -252,6 +253,7 @@ namespace Dalamud.Injector
             var delayInitializeMs = startInfo.DelayInitializeMs;
             var logName = startInfo.LogName;
             var languageStr = startInfo.Language.ToString().ToLowerInvariant();
+            languageStr = "chinese";
             var troubleshootingData = "{\"empty\": true, \"description\": \"No troubleshooting data supplied.\"}";
 
             for (var i = 2; i < args.Count; i++)
@@ -395,7 +397,12 @@ namespace Dalamud.Injector
 
             for (var i = 2; i < args.Count; i++)
             {
-                if (int.TryParse(args[i], out int pid))
+                var isHex = args[i].StartsWith("0x");
+                if (int.TryParse(
+                    isHex ? args[i].Substring(2) : args[i],
+                    isHex ? NumberStyles.HexNumber : NumberStyles.Integer,
+                    NumberFormatInfo.CurrentInfo,
+                    out int pid))
                 {
                     targetProcessSpecified = true;
                     try
