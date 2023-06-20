@@ -486,7 +486,18 @@ namespace Dalamud.Injector
             }
 
             foreach (var process in processes)
+            {
+                for (var j = 0; j < process.Modules.Count; j++)
+                {
+                    if (process.Modules[j].ModuleName == "Dalamud.dll")
+                    {
+                        goto next;
+                    }
+                }
+
                 Inject(process, AdjustStartInfo(dalamudStartInfo, process.MainModule.FileName), tryFixAcl);
+            next:;
+            }
 
             return 0;
         }
