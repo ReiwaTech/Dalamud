@@ -92,9 +92,9 @@ public sealed class EntryPoint
         var oldPath = Path.Combine(baseDirectory, $"{logFileName}.old.log");
         var oldPathOld = Path.Combine(baseDirectory, $"{logFileName}.log.old");
 #else
-        var logPath = Path.Combine(baseDirectory, "..", "..", "..", $"{logFileName}.log");
-        var oldPath = Path.Combine(baseDirectory, "..", "..", "..", $"{logFileName}.old.log");
-        var oldPathOld = Path.Combine(baseDirectory, "..", "..", "..", $"{logFileName}.log.old");
+        var logPath = Path.Combine(baseDirectory, "..", $"{logFileName}.log");
+        var oldPath = Path.Combine(baseDirectory, "..", $"{logFileName}.old.log");
+        var oldPathOld = Path.Combine(baseDirectory, "..", $"{logFileName}.log.old");
 #endif
         Log.CloseAndFlush();
 
