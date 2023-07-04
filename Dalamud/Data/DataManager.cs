@@ -3,12 +3,15 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http.Json;
 using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
 
 using Dalamud.Interface.Internal;
 using Dalamud.IoC;
 using Dalamud.IoC.Internal;
+using Dalamud.Networking.Http;
 using Dalamud.Utility;
 using Dalamud.Utility.Timing;
 using ImGuiScene;
@@ -36,6 +39,7 @@ public sealed class DataManager : IDisposable, IServiceType
 
     private readonly Thread luminaResourceThread;
     private readonly CancellationTokenSource luminaCancellationTokenSource;
+    private readonly FFXIVOpcodes ffxivOpcodes;
 
     [ServiceManager.ServiceConstructor]
     private DataManager(DalamudStartInfo dalamudStartInfo, Dalamud dalamud)
@@ -123,11 +127,64 @@ public sealed class DataManager : IDisposable, IServiceType
             });
             this.luminaResourceThread.Start();
             this.ChangeWorldForCN();
+
+            this.ffxivOpcodes = new FFXIVOpcodes("CN");
+            this.LoadFFXIVOpcodes();
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Could not download data.");
         }
+    }
+
+    private void LoadFFXIVOpcodes()
+    {
+        var serverMap = new[]
+        {
+            // Dalamud, FFXIVOpcodes
+            ("ActorControlSelf", "ActorControlSelf"),
+            ("ContainerInfo", "ContainerInfo"),
+            ("MarketBoardItemRequestStart", "MarketBoardItemListingCount"),
+            ("MarketBoardHistory", "MarketBoardItemListingHistory"),
+            ("MarketBoardOfferings", "MarketBoardItemListing"),
+            ("MarketBoardPurchase", "MarketBoardPurchase"),
+            ("InventoryActionAck", "InventoryActionAck"),
+            ("MarketTaxRates", "ResultDialog"),
+            ("RetainerInformation", "RetainerInformation"),
+            ("ItemMarketBoardInfo", "ItemMarketBoardInfo"),
+            ("CfNotifyPop", "CFNotify"),
+        };
+
+        var clientMap = new[]
+        {
+            // Dalamud, FFXIVOpcodes
+            ("MarketBoardPurchaseHandler", "MarketBoardPurchaseHandler"),
+        };
+
+        var update = (ReadOnlyDictionary<string, ushort> original, (string, string)[] map) =>
+        {
+            var dict = new Dictionary<string, ushort>(original);
+            foreach (var (dalamudKey, opcodeKey) in map)
+            {
+                if (this.ffxivOpcodes.ServerOpCodes.TryGetValue(opcodeKey, out var opcode))
+                {
+                    Log.Verbose("Setting {0} to {1} per FFXIVOpcodes.", dalamudKey, opcode);
+                    if (!dict.TryAdd(dalamudKey, opcode))
+                    {
+                        dict[dalamudKey] = opcode;
+                    }
+                }
+            }
+
+            return new ReadOnlyDictionary<string, ushort>(dict);
+        };
+
+        Task.Run(async () =>
+        {
+            await this.ffxivOpcodes.Init();
+            this.ServerOpCodes = update(this.ServerOpCodes, serverMap);
+            this.ClientOpCodes = update(this.ClientOpCodes, clientMap);
+        });
     }
 
     /// <summary>
