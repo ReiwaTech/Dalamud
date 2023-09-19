@@ -28,6 +28,7 @@ internal record LocalPluginManifest : PluginManifest
     /// Gets or sets a value indicating whether the plugin is disabled and should not be loaded.
     /// This value supersedes the ".disabled" file functionality and should not be included in the plugin master.
     /// </summary>
+    [Obsolete("This is merely used for migrations now. Use the profile manager to check if a plugin shall be enabled.")]
     public bool Disabled { get; set; }
 
     /// <summary>
@@ -75,7 +76,7 @@ internal record LocalPluginManifest : PluginManifest
     /// </summary>
     /// <param name="manifestFile">Path to the manifest.</param>
     /// <returns>A <see cref="PluginManifest"/> object.</returns>
-    public static LocalPluginManifest Load(FileInfo manifestFile) => JsonConvert.DeserializeObject<LocalPluginManifest>(File.ReadAllText(manifestFile.FullName))!;
+    public static LocalPluginManifest? Load(FileInfo manifestFile) => JsonConvert.DeserializeObject<LocalPluginManifest>(File.ReadAllText(manifestFile.FullName));
 
     /// <summary>
     /// A standardized way to get the plugin DLL name that should accompany a manifest file. May not exist.

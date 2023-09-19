@@ -256,7 +256,8 @@ public class ChatHandlers : IServiceType
 
         var assemblyVersion = Assembly.GetAssembly(typeof(ChatHandlers)).GetName().Version.ToString();
 
-        if (this.configuration.PrintDalamudWelcomeMsg) {
+        if (this.configuration.PrintDalamudWelcomeMsg)
+        {
             chatGui.Print(string.Format(Loc.Localize("DalamudWelcome", "Dalamud vD{0} loaded."), assemblyVersion)
                           + string.Format(Loc.Localize("PluginsWelcome", " {0} plugin(s) loaded."), pluginManager.InstalledPlugins.Count(x => x.IsLoaded)));
         }
@@ -299,7 +300,7 @@ public class ChatHandlers : IServiceType
         if (chatGui == null || pluginManager == null || notifications == null)
             return;
 
-        if (!pluginManager.ReposReady || pluginManager.InstalledPlugins.Count == 0 || pluginManager.AvailablePlugins.Count == 0)
+        if (!pluginManager.ReposReady || !pluginManager.InstalledPlugins.Any() || !pluginManager.AvailablePlugins.Any())
         {
             // Plugins aren't ready yet.
             // TODO: We should retry. This sucks, because it means we won't ever get here again until another notice.
@@ -318,7 +319,7 @@ public class ChatHandlers : IServiceType
                 return;
             }
 
-            var updatedPlugins = task.Result;
+            var updatedPlugins = task.Result.ToList();
             if (updatedPlugins.Any())
             {
                 if (this.configuration.AutoUpdatePlugins)
