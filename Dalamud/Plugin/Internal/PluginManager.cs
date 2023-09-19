@@ -25,6 +25,7 @@ using Dalamud.Networking.Http;
 using Dalamud.Plugin.Internal.Exceptions;
 using Dalamud.Plugin.Internal.Profiles;
 using Dalamud.Plugin.Internal.Types;
+using Dalamud.Plugin.Internal.Types.Manifest;
 using Dalamud.Plugin.Ipc.Internal;
 using Dalamud.Utility;
 using Dalamud.Utility.Timing;
@@ -202,7 +203,7 @@ internal partial class PluginManager : IDisposable, IServiceType
     /// <summary>
     /// Gets a value indicating whether all added repos are not in progress.
     /// </summary>
-    public bool ReposReady => this.Repos.All(repo => repo.State != PluginRepositoryState.InProgress);
+    public bool ReposReady { get; private set; }
 
     /// <summary>
     /// Gets a value indicating whether the plugin manager started in safe mode.
@@ -246,7 +247,7 @@ internal partial class PluginManager : IDisposable, IServiceType
     /// </summary>
     /// <param name="manifest">The manifest to test.</param>
     /// <returns>Whether or not a testing version is available.</returns>
-    public static bool HasTestingVersion(PluginManifest manifest)
+    public static bool HasTestingVersion(IPluginManifest manifest)
     {
         var av = manifest.AssemblyVersion;
         var tv = manifest.TestingAssemblyVersion;
@@ -262,6 +263,7 @@ internal partial class PluginManager : IDisposable, IServiceType
 
     /// <summary>
     /// Get a disposable that will lock plugin lists while it is not disposed.
+    /// You must NEVER use this in async code.
     /// </summary>
     /// <returns>The aforementioned disposable.</returns>
     public IDisposable GetSyncScope() => new ScopedSyncRoot(this.pluginListLock);
@@ -315,7 +317,7 @@ internal partial class PluginManager : IDisposable, IServiceType
     /// </summary>
     /// <param name="manifest">Manifest to check.</param>
     /// <returns>A value indicating whether testing should be used.</returns>
-    public bool HasTestingOptIn(PluginManifest manifest)
+    public bool HasTestingOptIn(IPluginManifest manifest)
     {
         return this.configuration.PluginTestingOptIns!.Any(x => x.InternalName == manifest.InternalName);
     }
@@ -326,7 +328,7 @@ internal partial class PluginManager : IDisposable, IServiceType
     /// </summary>
     /// <param name="manifest">Manifest to check.</param>
     /// <returns>A value indicating whether testing should be used.</returns>
-    public bool UseTesting(PluginManifest manifest)
+    public bool UseTesting(IPluginManifest manifest)
     {
         if (!this.configuration.DoPluginTest)
             return false;
@@ -648,15 +650,27 @@ internal partial class PluginManager : IDisposable, IServiceType
     public async Task ReloadPluginMastersAsync(bool notify = true)
     {
         Log.Information("Now reloading all PluginMasters...");
+        this.ReposReady = false;
 
-        Debug.Assert(!this.Repos.First().IsThirdParty, "First repository should be main repository");
-        await this.Repos.First().ReloadPluginMasterAsync(); // Load official repo first
+        try
+        {
+            Debug.Assert(!this.Repos.First().IsThirdParty, "First repository should be main repository");
+            await this.Repos.First().ReloadPluginMasterAsync(); // Load official repo first
 
-        await Task.WhenAll(this.Repos.Skip(1).Select(repo => repo.ReloadPluginMasterAsync()));
+            await Task.WhenAll(this.Repos.Skip(1).Select(repo => repo.ReloadPluginMasterAsync()));
 
-        Log.Information("PluginMasters reloaded, now refiltering...");
+            Log.Information("PluginMasters reloaded, now refiltering...");
 
-        this.RefilterPluginMasters(notify);
+            this.RefilterPluginMasters(notify);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Could not reload plugin repositories");
+        }
+        finally
+        {
+            this.ReposReady = true;
+        }
     }
 
     /// <summary>
@@ -852,7 +866,7 @@ internal partial class PluginManager : IDisposable, IServiceType
         // Document the url the plugin was installed from
         manifest.InstalledFromUrl = repoManifest.SourceRepo.IsThirdParty ? repoManifest.SourceRepo.PluginMasterUrl : LocalPluginManifest.FlagMainRepo;
 
-        manifest.Save(manifestFile);
+        manifest.Save(manifestFile, "installation");
 
         Log.Information($"Installed plugin {manifest.Name} (testing={useTesting})");
 
@@ -1290,28 +1304,28 @@ internal partial class PluginManager : IDisposable, IServiceType
             {
                 // We didn't want this plugin, and StartOnBoot is on. That means we don't want it and it should stay off until manually enabled.
                 Log.Verbose("DevPlugin {Name} disabled and StartOnBoot => disable", probablyInternalNameForThisPurpose);
-                this.profileManager.DefaultProfile.AddOrUpdate(probablyInternalNameForThisPurpose, false, false);
+                await this.profileManager.DefaultProfile.AddOrUpdateAsync(probablyInternalNameForThisPurpose, false, false);
                 loadPlugin = false;
             }
             else if (wantsInDefaultProfile == true && devPlugin.StartOnBoot)
             {
                 // We wanted this plugin, and StartOnBoot is on. That means we actually do want it.
                 Log.Verbose("DevPlugin {Name} enabled and StartOnBoot => enable", probablyInternalNameForThisPurpose);
-                this.profileManager.DefaultProfile.AddOrUpdate(probablyInternalNameForThisPurpose, true, false);
+                await this.profileManager.DefaultProfile.AddOrUpdateAsync(probablyInternalNameForThisPurpose, true, false);
                 loadPlugin = !doNotLoad;
             }
             else if (wantsInDefaultProfile == true && !devPlugin.StartOnBoot)
             {
                 // We wanted this plugin, but StartOnBoot is off. This means we don't want it anymore.
                 Log.Verbose("DevPlugin {Name} enabled and !StartOnBoot => disable", probablyInternalNameForThisPurpose);
-                this.profileManager.DefaultProfile.AddOrUpdate(probablyInternalNameForThisPurpose, false, false);
+                await this.profileManager.DefaultProfile.AddOrUpdateAsync(probablyInternalNameForThisPurpose, false, false);
                 loadPlugin = false;
             }
             else if (wantsInDefaultProfile == false && !devPlugin.StartOnBoot)
             {
                 // We didn't want this plugin, and StartOnBoot is off. We don't want it.
                 Log.Verbose("DevPlugin {Name} disabled and !StartOnBoot => disable", probablyInternalNameForThisPurpose);
-                this.profileManager.DefaultProfile.AddOrUpdate(probablyInternalNameForThisPurpose, false, false);
+                await this.profileManager.DefaultProfile.AddOrUpdateAsync(probablyInternalNameForThisPurpose, false, false);
                 loadPlugin = false;
             }
 
@@ -1328,7 +1342,7 @@ internal partial class PluginManager : IDisposable, IServiceType
 #pragma warning restore CS0618
 
         // Need to do this here, so plugins that don't load are still added to the default profile
-        var wantToLoad = this.profileManager.GetWantState(plugin.Manifest.InternalName, defaultState);
+        var wantToLoad = await this.profileManager.GetWantStateAsync(plugin.Manifest.InternalName, defaultState);
 
         if (loadPlugin)
         {

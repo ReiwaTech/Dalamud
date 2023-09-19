@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Threading.Tasks;
 
 using CheapLoc;
+using Dalamud.Configuration.Internal;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Internal.Notifications;
@@ -48,10 +49,14 @@ internal class ProfileManagerWidget
     /// </summary>
     public void Draw()
     {
+        var tutorialTitle = Locs.TutorialTitle + "###collectionsTutorWindow";
+        var tutorialId = ImGui.GetID(tutorialTitle);
+        this.DrawTutorial(tutorialTitle);
+        
         switch (this.mode)
         {
             case Mode.Overview:
-                this.DrawOverview();
+                this.DrawOverview(tutorialId);
                 break;
 
             case Mode.EditSingleProfile:
@@ -70,7 +75,53 @@ internal class ProfileManagerWidget
         this.pickerSearch = string.Empty;
     }
 
-    private void DrawOverview()
+    private void DrawTutorial(string modalTitle)
+    {
+        var open = true;
+        ImGui.SetNextWindowSize(new Vector2(450, 350), ImGuiCond.Appearing);
+        using (var popup = ImRaii.PopupModal(modalTitle, ref open))
+        {
+            if (popup)
+            {
+                using var scrolling = ImRaii.Child("###scrolling", new Vector2(-1, -1));
+                if (scrolling)
+                {
+                    ImGuiHelpers.SafeTextWrapped(Locs.TutorialParagraphOne);
+                    ImGuiHelpers.ScaledDummy(5);
+                    ImGuiHelpers.SafeTextWrapped(Locs.TutorialParagraphTwo);
+                    ImGuiHelpers.ScaledDummy(5);
+                    ImGuiHelpers.SafeTextWrapped(Locs.TutorialParagraphThree);
+                    ImGuiHelpers.ScaledDummy(5);
+                    ImGuiHelpers.SafeTextWrapped(Locs.TutorialParagraphFour);
+                    ImGuiHelpers.ScaledDummy(5);
+                    ImGuiHelpers.SafeTextWrapped(Locs.TutorialCommands);
+                    ImGui.BulletText(Locs.TutorialCommandsEnable);
+                    ImGui.BulletText(Locs.TutorialCommandsDisable);
+                    ImGui.BulletText(Locs.TutorialCommandsToggle);
+                    ImGuiHelpers.SafeTextWrapped(Locs.TutorialCommandsEnd);
+                    
+                    ImGuiHelpers.ScaledDummy(5);
+            
+                    var buttonWidth = 120f;
+                    ImGui.SetCursorPosX((ImGui.GetWindowWidth() - buttonWidth) / 2);
+                    if (ImGui.Button("OK", new Vector2(buttonWidth, 40)))
+                    {
+                        ImGui.CloseCurrentPopup();
+                    }
+                }
+            }
+        }
+
+        var config = Service<DalamudConfiguration>.Get();
+        if (!config.ProfilesHasSeenTutorial)
+        {
+            ImGui.OpenPopup(modalTitle);
+            config.ProfilesHasSeenTutorial = true;
+            config.QueueSave();
+        }
+    }
+
+    private void DrawOverview(uint tutorialId)
     {
         var didAny = false;
         var profman = Service<ProfileManager>.Get();
@@ -101,16 +152,28 @@ internal class ProfileManagerWidget
 
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip(Locs.ImportProfileHint);
+        
+        ImGui.SameLine();
+        ImGuiHelpers.ScaledDummy(5);
+        ImGui.SameLine();
+        
+        if (ImGuiComponents.IconButton(FontAwesomeIcon.Question))
+            ImGui.OpenPopup(tutorialId);
+        
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(Locs.TutorialHint);
 
         ImGui.Separator();
         ImGuiHelpers.ScaledDummy(5);
 
         var windowSize = ImGui.GetWindowSize();
 
-        if (ImGui.BeginChild("###profileChooserScrolling"))
+        using var profileChooserChild = ImRaii.Child("###profileChooserScrolling");
+        if (profileChooserChild)
         {
             Guid? toCloneGuid = null;
 
+            using var syncScope = profman.GetSyncScope();
             foreach (var profile in profman.Profiles)
             {
                 if (profile.IsDefaultProfile)
@@ -119,7 +182,7 @@ internal class ProfileManagerWidget
                 var isEnabled = profile.IsEnabled;
                 if (ImGuiComponents.ToggleButton($"###toggleButton{profile.Guid}", ref isEnabled))
                 {
-                    Task.Run(() => profile.SetState(isEnabled))
+                    Task.Run(() => profile.SetStateAsync(isEnabled))
                         .ContinueWith(this.installer.DisplayErrorContinuation, Locs.ErrorCouldNotChangeState);
                 }
 
@@ -179,8 +242,6 @@ internal class ProfileManagerWidget
                 ImGuiHelpers.CenteredText(Locs.AddProfileHint);
                 ImGui.PopStyleColor();
             }
-
-            ImGui.EndChild();
         }
     }
 
@@ -206,6 +267,7 @@ internal class ProfileManagerWidget
         }
 
         const string addPluginToProfilePopup = "###addPluginToProfile";
+        var addPluginToProfilePopupId = ImGui.GetID(addPluginToProfilePopup);
         using (var popup = ImRaii.Popup(addPluginToProfilePopup))
         {
             if (popup.Success)
@@ -228,9 +290,7 @@ internal class ProfileManagerWidget
 
                         if (ImGui.Selectable($"{plugin.Manifest.Name}###selector{plugin.Manifest.InternalName}"))
                         {
-                            // TODO this sucks
-                            profile.AddOrUpdate(plugin.Manifest.InternalName, true, false);
-                            Task.Run(() => profman.ApplyAllWantStates())
+                            Task.Run(() => profile.AddOrUpdateAsync(plugin.Manifest.InternalName, true, false))
                                 .ContinueWith(this.installer.DisplayErrorContinuation, Locs.ErrorCouldNotChangeState);
                         }
                     }
@@ -273,8 +333,12 @@ internal class ProfileManagerWidget
             this.Reset();
 
             // DeleteProfile() is sync, it doesn't apply and we are modifying the plugins collection. Will throw below when iterating
-            profman.DeleteProfile(profile);
-            Task.Run(() => profman.ApplyAllWantStates())
+            // TODO: DeleteProfileAsync should probably apply as well
+            Task.Run(async () =>
+                {
+                    await profman.DeleteProfileAsync(profile);
+                    await profman.ApplyAllWantStatesAsync();
+                })
                 .ContinueWith(t =>
                 {
                     this.installer.DisplayErrorContinuation(t, Locs.ErrorCouldNotChangeState);
@@ -300,7 +364,7 @@ internal class ProfileManagerWidget
         var isEnabled = profile.IsEnabled;
         if (ImGuiComponents.ToggleButton($"###toggleButton{profile.Guid}", ref isEnabled))
         {
-            Task.Run(() => profile.SetState(isEnabled))
+            Task.Run(() => profile.SetStateAsync(isEnabled))
                 .ContinueWith(this.installer.DisplayErrorContinuation, Locs.ErrorCouldNotChangeState);
         }
 
@@ -322,12 +386,14 @@ internal class ProfileManagerWidget
         ImGui.Separator();
         var wantPluginAddPopup = false;
 
-        if (ImGui.BeginChild("###profileEditorPluginList"))
+        using var pluginListChild = ImRaii.Child("###profileEditorPluginList");
+        if (pluginListChild)
         {
             var pluginLineHeight = 32 * ImGuiHelpers.GlobalScale;
             string? wantRemovePluginInternalName = null;
 
-            foreach (var plugin in profile.Plugins)
+            using var syncScope = profile.GetSyncScope();
+            foreach (var plugin in profile.Plugins.ToArray())
             {
                 didAny = true;
                 var pmPlugin = pm.InstalledPlugins.FirstOrDefault(x => x.Manifest.InternalName == plugin.InternalName);
@@ -335,7 +401,7 @@ internal class ProfileManagerWidget
 
                 if (pmPlugin != null)
                 {
-                    pic.TryGetIcon(pmPlugin, pmPlugin.Manifest, pmPlugin.Manifest.IsThirdParty, out var icon);
+                    pic.TryGetIcon(pmPlugin, pmPlugin.Manifest, pmPlugin.IsThirdParty, out var icon);
                     icon ??= pic.DefaultIcon;
 
                     ImGui.Image(icon.ImGuiHandle, new Vector2(pluginLineHeight));
@@ -391,7 +457,7 @@ internal class ProfileManagerWidget
                 var enabled = plugin.IsEnabled;
                 if (ImGui.Checkbox($"###{this.editingProfileGuid}-{plugin.InternalName}", ref enabled))
                 {
-                    Task.Run(() => profile.AddOrUpdate(plugin.InternalName, enabled))
+                    Task.Run(() => profile.AddOrUpdateAsync(plugin.InternalName, enabled))
                         .ContinueWith(this.installer.DisplayErrorContinuation, Locs.ErrorCouldNotChangeState);
                 }
 
@@ -411,9 +477,8 @@ internal class ProfileManagerWidget
             if (wantRemovePluginInternalName != null)
             {
                 // TODO: handle error
-                profile.Remove(wantRemovePluginInternalName, false);
-                Task.Run(() => profman.ApplyAllWantStates())
-                    .ContinueWith(this.installer.DisplayErrorContinuation, Locs.ErrorCouldNotRemove);
+                Task.Run(() => profile.RemoveAsync(wantRemovePluginInternalName, false))
+                                .ContinueWith(this.installer.DisplayErrorContinuation, Locs.ErrorCouldNotRemove);
             }
 
             if (!didAny)
@@ -436,14 +501,12 @@ internal class ProfileManagerWidget
             ImGui.TextUnformatted(addPluginsText);
 
             ImGuiHelpers.ScaledDummy(10);
-
-            ImGui.EndChild();
         }
 
         if (wantPluginAddPopup)
         {
             this.pickerSearch = string.Empty;
-            ImGui.OpenPopup(addPluginToProfilePopup);
+            ImGui.OpenPopup(addPluginToProfilePopupId);
         }
     }
 
@@ -486,6 +549,9 @@ internal class ProfileManagerWidget
         public static string ImportProfileHint =>
             Loc.Localize("ProfileManagerImportProfile", "Import a shared collection from your clipboard");
 
+        public static string TutorialHint =>
+            Loc.Localize("ProfileManagerTutorialHint", "Learn more about collections");
+
         public static string AddProfile => Loc.Localize("ProfileManagerAddProfile", "Add a new collection");
 
         public static string NotificationImportSuccess =>
@@ -499,6 +565,36 @@ internal class ProfileManagerWidget
 
         public static string ErrorCouldNotChangeState =>
             Loc.Localize("ProfileManagerCouldNotChangeState", "Could not change plugin state.");
+
+        public static string TutorialTitle =>
+            Loc.Localize("ProfileManagerTutorial", "About Collections");
+        
+        public static string TutorialParagraphOne =>
+            Loc.Localize("ProfileManagerTutorialParagraphOne", "Collections are shareable lists of plugins that can be enabled or disabled in the plugin installer or via chat commands.\nWhen a plugin is part of a collection, it will be enabled if the collection is enabled. If a plugin is part of multiple collections, it will be enabled if one or more collections it is a part of are enabled.");
+        
+        public static string TutorialParagraphTwo =>
+            Loc.Localize("ProfileManagerTutorialParagraphTwo", "You can add plugins to collections by clicking the plus button when editing a collection on this screen, or by using the button with the toolbox icon on the \"Installed Plugins\" screen.");
+        
+        public static string TutorialParagraphThree =>
+            Loc.Localize("ProfileManagerTutorialParagraphThree", "If a collection's \"Start on boot\" checkbox is ticked, the collection and the plugins within will be enabled every time the game starts up, even if it has been manually disabled in a prior session.");
+
+        public static string TutorialParagraphFour =>
+            Loc.Localize("ProfileManagerTutorialParagraphFour", "Individual plugins inside a collection also have a checkbox next to them. This indicates if a plugin is active within that collection - if the checkbox is not ticked, the plugin will not be enabled if that collection is active. Mind that it will still be enabled if the plugin is an active part of any other collection.");
+
+        public static string TutorialCommands =>
+            Loc.Localize("ProfileManagerTutorialCommands", "You can use the following commands in chat or in macros to manage active collections:");
+        
+        public static string TutorialCommandsEnable =>
+            Loc.Localize("ProfileManagerTutorialCommandsEnable", "/xlenableprofile \"Collection Name\" - Enable a collection");
+
+        public static string TutorialCommandsDisable =>
+            Loc.Localize("ProfileManagerTutorialCommandsDisable", "/xldisableprofile \"Collection Name\" - Disable a collection");
+        
+        public static string TutorialCommandsToggle =>
+            Loc.Localize("ProfileManagerTutorialCommandsToggle", "/xltoggleprofile \"Collection Name\" - Toggle a collection's state");
+        
+        public static string TutorialCommandsEnd =>
+            Loc.Localize("ProfileManagerTutorialCommandsEnd", "If you run multiple of these commands, they will be executed in order.");
 
         public static string NotInstalled(string name) =>
             Loc.Localize("ProfileManagerNotInstalled", "{0} (Not Installed)").Format(name);
