@@ -28,7 +28,7 @@ internal class GameFontManager : IServiceType
     {
         null,
         "AXIS_96", "AXIS_12", "AXIS_14", "AXIS_18", "AXIS_36",
-        "chnaxis_120", "chnaxis_140", "chnaxis_180",
+        "chnaxis_120", "chnaxis_140", "chnaxis_180", "chnaxis_360",
         "Jupiter_16", "Jupiter_20", "Jupiter_23", "Jupiter_45", "Jupiter_46", "Jupiter_90",
         "Meidinger_16", "Meidinger_20", "Meidinger_40",
         "MiedingerMid_10", "MiedingerMid_12", "MiedingerMid_14", "MiedingerMid_18", "MiedingerMid_36",
@@ -39,6 +39,7 @@ internal class GameFontManager : IServiceType
 
     private readonly FdtReader?[] fdts;
     private readonly List<byte[]> texturePixels;
+    private readonly List<byte[]> texturePixelsChn;
     private readonly Dictionary<GameFontStyle, ImFontPtr> fonts = new();
     private readonly Dictionary<GameFontStyle, int> fontUseCounter = new();
     private readonly Dictionary<GameFontStyle, Dictionary<char, Tuple<int, FdtReader.FontTableEntry>>> glyphRectIds = new();
@@ -57,17 +58,28 @@ internal class GameFontManager : IServiceType
 
         using (Timings.Start("Getting texture data"))
         {
-            var texTasks = Enumerable
-                           .Range(1, 1 + this.fdts
-                                             .Where(x => x != null)
-                                             .Select(x => x.Glyphs.Select(y => y.TextureFileIndex).Max())
-                                             .Max())
-                           .Select(x => dataManager.GetFile<TexFile>($"common/font/font_chn_{x}.tex")!)
-                           .Select(x => new Task<byte[]>(Timings.AttachTimingHandle(() => x.ImageData!)))
-                           .ToArray();
-            foreach (var task in texTasks)
-                task.Start();
-            this.texturePixels = texTasks.Select(x => x.GetAwaiter().GetResult()).ToList();
+            int[] textureCount = { 0, 0 };
+            for (int i = 0; i < this.fdts.Length; ++i)
+            {
+                var fdt = this.fdts[i];
+                if (fdt == null) continue;
+
+                var maxTextureIndex = fdt.Glyphs.Max(glyph => glyph.TextureFileIndex);
+
+                var index = this.IsFontChn(i) ? 1 : 0;
+                textureCount[index] = Math.Max(textureCount[index], maxTextureIndex);
+            }
+
+            var loadTexs = async (string prefix, int count) =>
+            {
+                var res = await Task.WhenAll(Enumerable.Range(1, 1 + count)
+                    .Select(x => Task.Run<byte[]>(Timings.AttachTimingHandle(() => dataManager.GetFile<TexFile>($"common/font/{prefix}{x}.tex")!.ImageData!))));
+
+                return res.ToList();
+            };
+
+            this.texturePixels = loadTexs("font", textureCount[0]).GetAwaiter().GetResult();
+            this.texturePixelsChn = loadTexs("font_chn_", textureCount[1]).GetAwaiter().GetResult();
         }
     }
 
@@ -89,6 +101,7 @@ internal class GameFontManager : IServiceType
             GameFontFamilyAndSize.ChnAxis120 => "CHNAXIS (120pt)",
             GameFontFamilyAndSize.ChnAxis140 => "CHNAXIS (140pt)",
             GameFontFamilyAndSize.ChnAxis180 => "CHNAXIS (180pt)",
+            GameFontFamilyAndSize.ChnAxis360 => "CHNAXIS (360pt)",
             GameFontFamilyAndSize.Jupiter16 => "Jupiter (16pt)",
             GameFontFamilyAndSize.Jupiter20 => "Jupiter (20pt)",
             GameFontFamilyAndSize.Jupiter23 => "Jupiter (23pt)",
@@ -353,7 +366,7 @@ internal class GameFontManager : IServiceType
                 var pixels32 = pixels32s[rc->TextureIndex];
                 var width = widths[rc->TextureIndex];
                 var height = heights[rc->TextureIndex];
-                var sourceBuffer = this.texturePixels[glyph.TextureFileIndex];
+                var sourceBuffer = (this.IsFontChn(style.FamilyAndSize) ? this.texturePixelsChn : this.texturePixels)[glyph.TextureFileIndex];
                 var sourceBufferDelta = glyph.TextureChannelByteIndex;
                 var widthAdjustment = style.CalculateBaseWidthAdjustment(fdt, glyph);
                 if (widthAdjustment == 0)
@@ -473,5 +486,15 @@ internal class GameFontManager : IServiceType
 
         foreach (var kernPair in fdt.Distances)
             font.AddKerningPair(kernPair.Left, kernPair.Right, kernPair.RightOffset);
+    }
+
+    private bool IsFontChn(GameFontFamilyAndSize font)
+    {
+        return this.IsFontChn((int)font);
+    }
+
+    private bool IsFontChn(int font)
+    {
+        return FontNames[font].StartsWith("chn");
     }
 }

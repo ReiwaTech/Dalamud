@@ -67,6 +67,13 @@ public enum GameFontFamilyAndSize : int
     ChnAxis180,
 
     /// <summary>
+    /// CHNAXIS (360pt)
+    ///
+    /// Contains Chinese characters in addition to Latin characters. Used in game for the whole UI.
+    /// </summary>
+    ChnAxis360,
+
+    /// <summary>
     /// Jupiter (16pt)
     ///
     /// Serif font. Contains mostly ASCII range. Used in game for job names.
