@@ -144,6 +144,7 @@ public class ThirdRepoSettingsEntry : SettingsEntry
 
         ImGui.Separator();
 
+        /*
         ImGui.TextUnformatted("0");
         ImGui.NextColumn();
         ImGui.TextUnformatted("XIVLauncher");
@@ -151,6 +152,7 @@ public class ThirdRepoSettingsEntry : SettingsEntry
         ImGui.NextColumn();
         ImGui.NextColumn();
         ImGui.Separator();
+        */
 
         ThirdPartyRepoSettings repoToRemove = null;
 
