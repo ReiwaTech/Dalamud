@@ -76,7 +76,7 @@ public class ThirdRepoSettingsEntry : SettingsEntry
         ImGuiHelpers.ScaledDummy(2);
 
         config.ThirdRepoSpeedbumpDismissed ??= config.ThirdRepoList.Any(x => x.IsEnabled);
-        var disclaimerDismissed = config.ThirdRepoSpeedbumpDismissed.Value;
+        var disclaimerDismissed = true || config.ThirdRepoSpeedbumpDismissed.Value;
         
         ImGui.PushFont(InterfaceManager.IconFont);
         ImGuiHelpers.SafeTextColoredWrapped(ImGuiColors.DalamudRed, FontAwesomeIcon.ExclamationTriangle.ToIconString());
