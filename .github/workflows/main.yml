@@ -29,12 +29,6 @@ jobs:
         run: .\build.ps1 compile
       - name: Test Dalamud
         run: .\build.ps1 test
-      - name: Sign Dalamud
-        if: ${{ github.repository_owner == 'goatcorp' && github.event_name == 'push' }}
-        env:
-          CODESIGN_CERT_PFX: ${{ secrets.CODESIGN_CERT_PFX }}
-          CODESIGN_CERT_PASSWORD: ${{ secrets.CODESIGN_CERT_PASSWORD }}
-        run: .\sign.ps1 .\bin\Release
       - name: Create hashlist
         run: .\CreateHashList.ps1 .\bin\Release
       - name: Upload artifact
@@ -86,14 +80,14 @@ jobs:
 
   deploy_stg:
     name: Deploy dalamud-distrib staging
-    if: ${{ github.repository_owner == 'goatcorp' && github.event_name == 'push' }}
+    if: ${{ github.repository_owner == 'ReiwaTech' && github.event_name == 'push' }}
     needs: build
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v2
       with:
-        repository: goatcorp/dalamud-distrib
-        token: ${{ secrets.UPDATE_PAT }}
+        repository: ReiwaTech/dalamud-distrib
+        ssh-key: ${{ secrets.DEPLOY_SSH }}
     - uses: actions/download-artifact@v2
       with:
         name: dalamud-artifact
