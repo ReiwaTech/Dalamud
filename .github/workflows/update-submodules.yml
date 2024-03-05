@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        branches: [master]
+        branches: [cn]
         submodule:
           - name: ClientStructs
             path: lib/FFXIVClientStructs
@@ -32,7 +32,7 @@ jobs:
       with:
         submodules: true
         ref: ${{ matrix.branches }}
-        token: ${{ secrets.UPDATE_PAT }}
+        token: ${{ secrets.PAT }}
     - name: Create update branch
       run: git checkout -b ${{ matrix.submodule.branch-prefix }}/${{ matrix.branches }}
     - name: Initialize mandatory git config
@@ -64,7 +64,7 @@ jobs:
     - name: Create PR
       if: ${{ steps.update-submodule.outputs.SUBMIT_PR == 'true' }}
       run: |
-        echo ${{ secrets.UPDATE_PAT }} | gh auth login --with-token
+        echo ${{ secrets.PAT }} | gh auth login --with-token
         prNumber=$(gh pr list --base ${{ matrix.branches }} --head ${{ matrix.submodule.branch-prefix }}-${{ matrix.branches }} --state open --json number --template "{{range .}}{{.number}}{{end}}")
         if [ -z "$prNumber" ]; then
           echo "No PR found, creating one"
