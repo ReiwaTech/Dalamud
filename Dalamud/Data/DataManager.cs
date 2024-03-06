@@ -104,6 +104,7 @@ internal sealed class DataManager : IDisposable, IServiceType, IDataManager
                 }
             });
             this.luminaResourceThread.Start();
+            CNServerPatch.ChangeWorldForCN(this.GameData);
         }
         catch (Exception ex)
         {
@@ -136,7 +137,7 @@ internal sealed class DataManager : IDisposable, IServiceType, IDataManager
 
     /// <inheritdoc/>
     public ExcelSheet<T>? GetExcelSheet<T>(ClientLanguage language) where T : ExcelRow 
-        => this.Excel.GetSheet<T>(language.ToLumina());
+        => this.Excel.GetSheet<T>(ClientLanguage.ChineseSimplified.ToLumina());
 
     /// <inheritdoc/>
     public FileResource? GetFile(string path) 

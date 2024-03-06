@@ -59,6 +59,12 @@ SheepGoMeh
 philpax
 
 
+CN maintained by:
+Bluefissure
+Loskh
+wozaiha
+subjadeites
+MapleRecall
 
 Localization by:
 
