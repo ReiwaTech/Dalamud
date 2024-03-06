@@ -39,6 +39,7 @@ public class BranchSwitcherWindow : Window
     /// <inheritdoc/>
     public override void OnOpen()
     {
+        if (false)
         Task.Run(async () =>
         {
             var client = Service<HappyHttpClient>.Get().SharedHttpClient;
@@ -60,6 +61,11 @@ public class BranchSwitcherWindow : Window
     /// <inheritdoc/>
     public override void Draw()
     {
+        if (true) {
+            ImGui.TextColored(ImGuiColors.DalamudGrey, "Not supported in this build");
+            return;
+        }
+
         if (this.branches == null)
         {
             ImGui.TextColored(ImGuiColors.DalamudGrey, "Loading branches...");
