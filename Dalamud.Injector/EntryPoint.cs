@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -483,7 +484,12 @@ namespace Dalamud.Injector
 
             for (var i = 2; i < args.Count; i++)
             {
-                if (int.TryParse(args[i], out int pid))
+                var isHex = args[i].StartsWith("0x");
+                if (int.TryParse(
+                    isHex ? args[i].Substring(2) : args[i],
+                    isHex ? NumberStyles.HexNumber : NumberStyles.Integer,
+                    NumberFormatInfo.CurrentInfo,
+                    out int pid))
                 {
                     targetProcessSpecified = true;
                     try
@@ -567,7 +573,18 @@ namespace Dalamud.Injector
             }
 
             foreach (var process in processes)
+            {
+                for (var j = 0; j < process.Modules.Count; j++)
+                {
+                    if (process.Modules[j].ModuleName == "Dalamud.dll")
+                    {
+                        goto next;
+                    }
+                }
+
                 Inject(process, AdjustStartInfo(dalamudStartInfo, process.MainModule.FileName), tryFixAcl);
+            next:;
+            }
 
             Log.CloseAndFlush();
             return 0;
