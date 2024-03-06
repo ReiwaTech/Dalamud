@@ -192,7 +192,7 @@ public class ThirdRepoSettingsEntry : SettingsEntry
                 else
                 {
                     thirdRepoSetting.Url = url;
-                    this.thirdRepoListChanged = url != thirdRepoSetting.Url;
+                    this.thirdRepoListChanged = true;
                 }
             }
 
