@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 
 using CheapLoc;
 using Dalamud.Configuration.Internal;
+using Dalamud.Console;
 using Dalamud.Game.ClientState;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Keys;
@@ -46,7 +47,7 @@ namespace Dalamud.Interface.Internal;
 /// This plugin implements all of the Dalamud interface separately, to allow for reloading of the interface and rapid prototyping.
 /// </summary>
 [ServiceManager.EarlyLoadedService]
-internal class DalamudInterface : IDisposable, IServiceType
+internal class DalamudInterface : IInternalDisposableService
 {
     private const float CreditsDarkeningMaxAlpha = 0.8f;
 
@@ -61,7 +62,6 @@ internal class DalamudInterface : IDisposable, IServiceType
     private readonly ComponentDemoWindow componentDemoWindow;
     private readonly DataWindow dataWindow;
     private readonly GamepadModeNotifierWindow gamepadModeNotifierWindow;
-    private readonly DalamudImeWindow imeWindow;
     private readonly ConsoleWindow consoleWindow;
     private readonly PluginStatWindow pluginStatWindow;
     private readonly PluginInstallerWindow pluginWindow;
@@ -102,7 +102,8 @@ internal class DalamudInterface : IDisposable, IServiceType
         Game.Framework framework,
         ClientState clientState,
         TitleScreenMenu titleScreenMenu,
-        GameGui gameGui)
+        GameGui gameGui,
+        ConsoleManager consoleManager)
     {
         this.dalamud = dalamud;
         this.configuration = configuration;
@@ -114,7 +115,6 @@ internal class DalamudInterface : IDisposable, IServiceType
         this.componentDemoWindow = new ComponentDemoWindow() { IsOpen = false };
         this.dataWindow = new DataWindow() { IsOpen = false };
         this.gamepadModeNotifierWindow = new GamepadModeNotifierWindow() { IsOpen = false };
-        this.imeWindow = new DalamudImeWindow() { IsOpen = false };
         this.consoleWindow = new ConsoleWindow(configuration) { IsOpen = configuration.LogOpenAtStartup };
         this.pluginStatWindow = new PluginStatWindow() { IsOpen = false };
         this.pluginWindow = new PluginInstallerWindow(pluginImageCache, configuration) { IsOpen = false };
@@ -128,7 +128,8 @@ internal class DalamudInterface : IDisposable, IServiceType
             fontAtlasFactory,
             framework,
             gameGui,
-            titleScreenMenu) { IsOpen = false };
+            titleScreenMenu,
+            consoleManager) { IsOpen = false };
         this.changelogWindow = new ChangelogWindow(
             this.titleScreenMenuWindow,
             fontAtlasFactory,
@@ -142,7 +143,6 @@ internal class DalamudInterface : IDisposable, IServiceType
         this.WindowSystem.AddWindow(this.componentDemoWindow);
         this.WindowSystem.AddWindow(this.dataWindow);
         this.WindowSystem.AddWindow(this.gamepadModeNotifierWindow);
-        this.WindowSystem.AddWindow(this.imeWindow);
         this.WindowSystem.AddWindow(this.consoleWindow);
         this.WindowSystem.AddWindow(this.pluginStatWindow);
         this.WindowSystem.AddWindow(this.pluginWindow);
@@ -212,7 +212,7 @@ internal class DalamudInterface : IDisposable, IServiceType
     }
 
     /// <inheritdoc/>
-    public void Dispose()
+    void IInternalDisposableService.DisposeService()
     {
         this.interfaceManager.Draw -= this.OnDraw;
 
@@ -266,11 +266,6 @@ internal class DalamudInterface : IDisposable, IServiceType
     public void OpenGamepadModeNotifierWindow() => this.gamepadModeNotifierWindow.IsOpen = true;
 
     /// <summary>
-    /// Opens the <see cref="DalamudImeWindow"/>.
-    /// </summary>
-    public void OpenImeWindow() => this.imeWindow.IsOpen = true;
-
-    /// <summary>
     /// Opens the <see cref="ConsoleWindow"/>.
     /// </summary>
     public void OpenLogWindow()
@@ -298,10 +293,10 @@ internal class DalamudInterface : IDisposable, IServiceType
     }
 
     /// <summary>
-    /// Opens the <see cref="PluginInstallerWindow"/> on the plugin installed.
+    /// Opens the <see cref="PluginInstallerWindow"/> on the specified page.
     /// </summary>
     /// <param name="kind">The page of the installer to open.</param>
-    public void OpenPluginInstallerTo(PluginInstallerWindow.PluginInstallerOpenKind kind)
+    public void OpenPluginInstallerTo(PluginInstallerOpenKind kind)
     {
         this.pluginWindow.OpenTo(kind);
         this.pluginWindow.BringToFront();
@@ -313,6 +308,16 @@ internal class DalamudInterface : IDisposable, IServiceType
     public void OpenSettings()
     {
         this.settingsWindow.IsOpen = true;
+        this.settingsWindow.BringToFront();
+    }
+
+    /// <summary>
+    /// Opens the <see cref="SettingsWindow"/> on the specified tab.
+    /// </summary>
+    /// <param name="kind">The tab of the settings to open.</param>
+    public void OpenSettingsTo(SettingsOpenKind kind)
+    {
+        this.settingsWindow.OpenTo(kind);
         this.settingsWindow.BringToFront();
     }
 
@@ -366,11 +371,6 @@ internal class DalamudInterface : IDisposable, IServiceType
     #region Close
 
     /// <summary>
-    /// Closes the <see cref="DalamudImeWindow"/>.
-    /// </summary>
-    public void CloseImeWindow() => this.imeWindow.IsOpen = false;
-
-    /// <summary>
     /// Closes the <see cref="GamepadModeNotifierWindow"/>.
     /// </summary>
     public void CloseGamepadModeNotifierWindow() => this.gamepadModeNotifierWindow.IsOpen = false;
@@ -418,11 +418,6 @@ internal class DalamudInterface : IDisposable, IServiceType
     public void ToggleGamepadModeNotifierWindow() => this.gamepadModeNotifierWindow.Toggle();
 
     /// <summary>
-    /// Toggles the <see cref="DalamudImeWindow"/>.
-    /// </summary>
-    public void ToggleImeWindow() => this.imeWindow.Toggle();
-
-    /// <summary>
     /// Toggles the <see cref="ConsoleWindow"/>.
     /// </summary>
     public void ToggleLogWindow() => this.consoleWindow.Toggle();
@@ -436,7 +431,7 @@ internal class DalamudInterface : IDisposable, IServiceType
     /// Toggles the <see cref="PluginInstallerWindow"/>.
     /// </summary>
     /// <param name="kind">The page of the installer to open.</param>
-    public void TogglePluginInstallerWindowTo(PluginInstallerWindow.PluginInstallerOpenKind kind) => this.pluginWindow.ToggleTo(kind);
+    public void TogglePluginInstallerWindowTo(PluginInstallerOpenKind kind) => this.pluginWindow.ToggleTo(kind);
 
     /// <summary>
     /// Toggles the <see cref="SettingsWindow"/>.
@@ -472,6 +467,15 @@ internal class DalamudInterface : IDisposable, IServiceType
     public void SetPluginInstallerSearchText(string text)
     {
         this.pluginWindow.SetSearchText(text);
+    }
+
+    /// <summary>
+    /// Sets the current search text for the settings window.
+    /// </summary>
+    /// <param name="text">The search term.</param>
+    public void SetSettingsSearchText(string text)
+    {
+        this.settingsWindow.SetSearchText(text);
     }
 
     /// <summary>
@@ -961,7 +965,7 @@ internal class DalamudInterface : IDisposable, IServiceType
 
                     if (ImGui.MenuItem("Export localizable"))
                     {
-                        localization.ExportLocalizable();
+                        localization.ExportLocalizable(true);
                     }
 
                     if (ImGui.BeginMenu("Load language..."))

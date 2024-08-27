@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.Serialization;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
 using Dalamud.Logging.Internal;
@@ -132,7 +132,7 @@ internal class ServiceContainer : IServiceProvider, IServiceType
             return null;
         }
 
-        var instance = FormatterServices.GetUninitializedObject(objectType);
+        var instance = RuntimeHelpers.GetUninitializedObject(objectType);
 
         if (!await this.InjectProperties(instance, scopedObjects, scope))
         {

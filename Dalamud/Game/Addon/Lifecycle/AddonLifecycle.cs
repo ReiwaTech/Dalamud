@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -11,6 +10,7 @@ using Dalamud.IoC.Internal;
 using Dalamud.Logging.Internal;
 using Dalamud.Memory;
 using Dalamud.Plugin.Services;
+
 using FFXIVClientStructs.FFXIV.Component.GUI;
 
 namespace Dalamud.Game.Addon.Lifecycle;
@@ -19,13 +19,16 @@ namespace Dalamud.Game.Addon.Lifecycle;
 /// This class provides events for in-game addon lifecycles.
 /// </summary>
 [InterfaceVersion("1.0")]
-[ServiceManager.BlockingEarlyLoadedService]
-internal unsafe class AddonLifecycle : IDisposable, IServiceType
+[ServiceManager.EarlyLoadedService]
+internal unsafe class AddonLifecycle : IInternalDisposableService
 {
     private static readonly ModuleLog Log = new("AddonLifecycle");
 
     [ServiceManager.ServiceDependency]
     private readonly Framework framework = Service<Framework>.Get();
+
+    [ServiceManager.ServiceDependency]
+    private readonly AddonLifecyclePooledArgs argsPool = Service<AddonLifecyclePooledArgs>.Get();
 
     private readonly nint disallowedReceiveEventAddress;
     
@@ -37,18 +40,6 @@ internal unsafe class AddonLifecycle : IDisposable, IServiceType
     private readonly CallHook<AddonUpdateDelegate> onAddonUpdateHook;
     private readonly Hook<AddonOnRefreshDelegate> onAddonRefreshHook;
     private readonly CallHook<AddonOnRequestedUpdateDelegate> onAddonRequestedUpdateHook;
-
-    // Note: these can be sourced from ObjectPool of appropriate types instead, but since we don't import that NuGet
-    // package, and these events are always called from the main thread, this is fine.
-#pragma warning disable CS0618 // Type or member is obsolete
-    // TODO: turn constructors of these internal
-    private readonly AddonSetupArgs recyclingSetupArgs = new();
-    private readonly AddonFinalizeArgs recyclingFinalizeArgs = new();
-    private readonly AddonDrawArgs recyclingDrawArgs = new();
-    private readonly AddonUpdateArgs recyclingUpdateArgs = new();
-    private readonly AddonRefreshArgs recyclingRefreshArgs = new();
-    private readonly AddonRequestedUpdateArgs recyclingRequestedUpdateArgs = new();
-#pragma warning restore CS0618 // Type or member is obsolete
 
     [ServiceManager.ServiceConstructor]
     private AddonLifecycle(TargetSigScanner sigScanner)
@@ -99,7 +90,7 @@ internal unsafe class AddonLifecycle : IDisposable, IServiceType
     internal List<AddonLifecycleEventListener> EventListeners { get; } = new();
 
     /// <inheritdoc/>
-    public void Dispose()
+    void IInternalDisposableService.DisposeService()
     {
         this.onAddonSetupHook.Dispose();
         this.onAddonSetup2Hook.Dispose();
@@ -143,6 +134,9 @@ internal unsafe class AddonLifecycle : IDisposable, IServiceType
     /// <param name="listener">The listener to unregister.</param>
     internal void UnregisterListener(AddonLifecycleEventListener listener)
     {
+        // Set removed state to true immediately, then lazily remove it from the EventListeners list on next Framework Update.
+        listener.Removed = true;
+        
         this.framework.RunOnTick(() =>
         {
             this.EventListeners.Remove(listener);
@@ -177,6 +171,10 @@ internal unsafe class AddonLifecycle : IDisposable, IServiceType
             if (listener.EventType != eventType)
                 continue;
 
+            // If the listener is pending removal, and is waiting until the next Framework Update, don't invoke listener.
+            if (listener.Removed)
+                continue;
+            
             // Match on string.empty for listeners that want events for all addons.
             if (!string.IsNullOrWhiteSpace(listener.AddonName) && !args.IsAddon(listener.AddonName))
                 continue;
@@ -253,12 +251,13 @@ internal unsafe class AddonLifecycle : IDisposable, IServiceType
             Log.Error(e, "Exception in OnAddonSetup ReceiveEvent Registration.");
         }
 
-        this.recyclingSetupArgs.AddonInternal = (nint)addon;
-        this.recyclingSetupArgs.AtkValueCount = valueCount;
-        this.recyclingSetupArgs.AtkValues = (nint)values;
-        this.InvokeListenersSafely(AddonEvent.PreSetup, this.recyclingSetupArgs);
-        valueCount = this.recyclingSetupArgs.AtkValueCount;
-        values = (AtkValue*)this.recyclingSetupArgs.AtkValues;
+        using var returner = this.argsPool.Rent(out AddonSetupArgs arg);
+        arg.AddonInternal = (nint)addon;
+        arg.AtkValueCount = valueCount;
+        arg.AtkValues = (nint)values;
+        this.InvokeListenersSafely(AddonEvent.PreSetup, arg);
+        valueCount = arg.AtkValueCount;
+        values = (AtkValue*)arg.AtkValues;
 
         try
         {
@@ -269,7 +268,7 @@ internal unsafe class AddonLifecycle : IDisposable, IServiceType
             Log.Error(e, "Caught exception when calling original AddonSetup. This may be a bug in the game or another plugin hooking this method.");
         }
 
-        this.InvokeListenersSafely(AddonEvent.PostSetup, this.recyclingSetupArgs);
+        this.InvokeListenersSafely(AddonEvent.PostSetup, arg);
     }
 
     private void OnAddonFinalize(AtkUnitManager* unitManager, AtkUnitBase** atkUnitBase)
@@ -284,8 +283,9 @@ internal unsafe class AddonLifecycle : IDisposable, IServiceType
             Log.Error(e, "Exception in OnAddonFinalize ReceiveEvent Removal.");
         }
 
-        this.recyclingFinalizeArgs.AddonInternal = (nint)atkUnitBase[0];
-        this.InvokeListenersSafely(AddonEvent.PreFinalize, this.recyclingFinalizeArgs);
+        using var returner = this.argsPool.Rent(out AddonFinalizeArgs arg);
+        arg.AddonInternal = (nint)atkUnitBase[0];
+        this.InvokeListenersSafely(AddonEvent.PreFinalize, arg);
 
         try
         {
@@ -299,8 +299,9 @@ internal unsafe class AddonLifecycle : IDisposable, IServiceType
 
     private void OnAddonDraw(AtkUnitBase* addon)
     {
-        this.recyclingDrawArgs.AddonInternal = (nint)addon;
-        this.InvokeListenersSafely(AddonEvent.PreDraw, this.recyclingDrawArgs);
+        using var returner = this.argsPool.Rent(out AddonDrawArgs arg);
+        arg.AddonInternal = (nint)addon;
+        this.InvokeListenersSafely(AddonEvent.PreDraw, arg);
 
         try
         {
@@ -311,14 +312,15 @@ internal unsafe class AddonLifecycle : IDisposable, IServiceType
             Log.Error(e, "Caught exception when calling original AddonDraw. This may be a bug in the game or another plugin hooking this method.");
         }
 
-        this.InvokeListenersSafely(AddonEvent.PostDraw, this.recyclingDrawArgs);
+        this.InvokeListenersSafely(AddonEvent.PostDraw, arg);
     }
 
     private void OnAddonUpdate(AtkUnitBase* addon, float delta)
     {
-        this.recyclingUpdateArgs.AddonInternal = (nint)addon;
-        this.recyclingUpdateArgs.TimeDeltaInternal = delta;
-        this.InvokeListenersSafely(AddonEvent.PreUpdate, this.recyclingUpdateArgs);
+        using var returner = this.argsPool.Rent(out AddonUpdateArgs arg);
+        arg.AddonInternal = (nint)addon;
+        arg.TimeDeltaInternal = delta;
+        this.InvokeListenersSafely(AddonEvent.PreUpdate, arg);
 
         try
         {
@@ -329,19 +331,20 @@ internal unsafe class AddonLifecycle : IDisposable, IServiceType
             Log.Error(e, "Caught exception when calling original AddonUpdate. This may be a bug in the game or another plugin hooking this method.");
         }
 
-        this.InvokeListenersSafely(AddonEvent.PostUpdate, this.recyclingUpdateArgs);
+        this.InvokeListenersSafely(AddonEvent.PostUpdate, arg);
     }
 
     private byte OnAddonRefresh(AtkUnitManager* atkUnitManager, AtkUnitBase* addon, uint valueCount, AtkValue* values)
     {
         byte result = 0;
 
-        this.recyclingRefreshArgs.AddonInternal = (nint)addon;
-        this.recyclingRefreshArgs.AtkValueCount = valueCount;
-        this.recyclingRefreshArgs.AtkValues = (nint)values;
-        this.InvokeListenersSafely(AddonEvent.PreRefresh, this.recyclingRefreshArgs);
-        valueCount = this.recyclingRefreshArgs.AtkValueCount;
-        values = (AtkValue*)this.recyclingRefreshArgs.AtkValues;
+        using var returner = this.argsPool.Rent(out AddonRefreshArgs arg);
+        arg.AddonInternal = (nint)addon;
+        arg.AtkValueCount = valueCount;
+        arg.AtkValues = (nint)values;
+        this.InvokeListenersSafely(AddonEvent.PreRefresh, arg);
+        valueCount = arg.AtkValueCount;
+        values = (AtkValue*)arg.AtkValues;
 
         try
         {
@@ -352,18 +355,19 @@ internal unsafe class AddonLifecycle : IDisposable, IServiceType
             Log.Error(e, "Caught exception when calling original AddonRefresh. This may be a bug in the game or another plugin hooking this method.");
         }
 
-        this.InvokeListenersSafely(AddonEvent.PostRefresh, this.recyclingRefreshArgs);
+        this.InvokeListenersSafely(AddonEvent.PostRefresh, arg);
         return result;
     }
 
     private void OnRequestedUpdate(AtkUnitBase* addon, NumberArrayData** numberArrayData, StringArrayData** stringArrayData)
     {
-        this.recyclingRequestedUpdateArgs.AddonInternal = (nint)addon;
-        this.recyclingRequestedUpdateArgs.NumberArrayData = (nint)numberArrayData;
-        this.recyclingRequestedUpdateArgs.StringArrayData = (nint)stringArrayData;
-        this.InvokeListenersSafely(AddonEvent.PreRequestedUpdate, this.recyclingRequestedUpdateArgs);
-        numberArrayData = (NumberArrayData**)this.recyclingRequestedUpdateArgs.NumberArrayData;
-        stringArrayData = (StringArrayData**)this.recyclingRequestedUpdateArgs.StringArrayData;
+        using var returner = this.argsPool.Rent(out AddonRequestedUpdateArgs arg);
+        arg.AddonInternal = (nint)addon;
+        arg.NumberArrayData = (nint)numberArrayData;
+        arg.StringArrayData = (nint)stringArrayData;
+        this.InvokeListenersSafely(AddonEvent.PreRequestedUpdate, arg);
+        numberArrayData = (NumberArrayData**)arg.NumberArrayData;
+        stringArrayData = (StringArrayData**)arg.StringArrayData;
 
         try
         {
@@ -374,7 +378,7 @@ internal unsafe class AddonLifecycle : IDisposable, IServiceType
             Log.Error(e, "Caught exception when calling original AddonRequestedUpdate. This may be a bug in the game or another plugin hooking this method.");
         }
 
-        this.InvokeListenersSafely(AddonEvent.PostRequestedUpdate, this.recyclingRequestedUpdateArgs);
+        this.InvokeListenersSafely(AddonEvent.PostRequestedUpdate, arg);
     }
 }
 
@@ -387,7 +391,7 @@ internal unsafe class AddonLifecycle : IDisposable, IServiceType
 #pragma warning disable SA1015
 [ResolveVia<IAddonLifecycle>]
 #pragma warning restore SA1015
-internal class AddonLifecyclePluginScoped : IDisposable, IServiceType, IAddonLifecycle
+internal class AddonLifecyclePluginScoped : IInternalDisposableService, IAddonLifecycle
 {
     [ServiceManager.ServiceDependency]
     private readonly AddonLifecycle addonLifecycleService = Service<AddonLifecycle>.Get();
@@ -395,7 +399,7 @@ internal class AddonLifecyclePluginScoped : IDisposable, IServiceType, IAddonLif
     private readonly List<AddonLifecycleEventListener> eventListeners = new();
 
     /// <inheritdoc/>
-    public void Dispose()
+    void IInternalDisposableService.DisposeService()
     {
         foreach (var listener in this.eventListeners)
         {

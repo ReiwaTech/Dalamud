@@ -1,13 +1,12 @@
-﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using System.Linq;
 
 using CheapLoc;
 using Dalamud.Configuration.Internal;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Utility;
+
 using ImGuiNET;
 
 namespace Dalamud.Interface.Internal.Windows.Settings.Widgets;
@@ -36,14 +35,14 @@ public sealed class LanguageChooserSettingsEntry : SettingsEntry
                 switch (language)
                 {
                     case "ko":
+                        // We're intentionally keeping this in English, as the Korean fonts are not loaded in unless
+                        // the language is already Korean or other preconditions are met. It's excessive to load a font
+                        // for two characters.
                         locLanguagesList.Add("Korean");
                         break;
-                    case "tw":
-                        locLanguagesList.Add("中華民國國語");
-                        break;
                     default:
-                        string locLanguage = CultureInfo.GetCultureInfo(language).NativeName;
-                        locLanguagesList.Add(char.ToUpper(locLanguage[0]) + locLanguage[1..]);
+                        var loc = Localization.GetCultureInfoFromLangCode(language);
+                        locLanguagesList.Add(loc.TextInfo.ToTitleCase(loc.NativeName));
                         break;
                 }
             }

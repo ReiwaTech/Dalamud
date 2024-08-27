@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup Label="Target">
-        <TargetFramework>net7.0-windows</TargetFramework>
+        <TargetFramework>net8.0-windows</TargetFramework>
         <PlatformTarget>x64</PlatformTarget>
         <Platforms>x64;AnyCPU</Platforms>
-        <LangVersion>11.0</LangVersion>
+        <LangVersion>12.0</LangVersion>
     </PropertyGroup>
 
     <PropertyGroup Label="Feature">
-        <DalamudVersion>9.0.0.21</DalamudVersion>
+        <DalamudVersion>9.1.0.12</DalamudVersion>
         <Description>XIV Launcher addon framework</Description>
         <AssemblyVersion>$(DalamudVersion)</AssemblyVersion>
         <Version>$(DalamudVersion)</Version>
@@ -68,21 +68,20 @@
         <PackageReference Include="goaaats.Reloaded.Hooks" Version="4.2.0-goat.4" />
         <PackageReference Include="goaaats.Reloaded.Assembler" Version="1.0.14-goat.2" />
         <PackageReference Include="JetBrains.Annotations" Version="2021.2.0" />
-        <PackageReference Include="Lumina" Version="3.16.0" />
+        <PackageReference Include="Lumina" Version="3.17.0" />
         <PackageReference Include="Lumina.Excel" Version="6.5.2" />
-        <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="8.0.1" />
+        <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="9.0.0-preview.1.24081.5" />
         <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.46-beta">
           <PrivateAssets>all</PrivateAssets>
         </PackageReference>
         <PackageReference Include="MinSharp" Version="1.0.4" />
-        <PackageReference Include="MonoModReorg.RuntimeDetour" Version="23.1.2-prerelease.1" />
         <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
         <PackageReference Include="Serilog" Version="2.11.0" />
         <PackageReference Include="Serilog.Sinks.Async" Version="1.5.0" />
         <PackageReference Include="Serilog.Sinks.Console" Version="4.0.1" />
         <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
         <PackageReference Include="sqlite-net-pcl" Version="1.8.116" />
-        <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.333">
+        <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
@@ -112,22 +111,10 @@
       </Content>
     </ItemGroup>
 
-    <ItemGroup>
-      <Folder Include="Game\Addon\" />
-    </ItemGroup>
-
     <Target Name="AddRuntimeDependenciesToContent" BeforeTargets="GetCopyToOutputDirectoryItems" DependsOnTargets="GenerateBuildDependencyFile;GenerateBuildRuntimeConfigurationFiles">
         <ItemGroup>
             <ContentWithTargetPath Include="$(ProjectDepsFilePath)" CopyToOutputDirectory="PreserveNewest" TargetPath="$(ProjectDepsFileName)" />
             <ContentWithTargetPath Include="$(ProjectRuntimeConfigFilePath)" CopyToOutputDirectory="PreserveNewest" TargetPath="$(ProjectRuntimeConfigFileName)" />
-        </ItemGroup>
-    </Target>
-
-    <Target Name="ChangeAliasesOfNugetRefs" BeforeTargets="FindReferenceAssembliesForReferences;ResolveReferences">
-        <ItemGroup>
-            <ReferencePath Condition="'%(FileName)' == 'MonoMod.Iced'">
-                <Aliases>monomod</Aliases>
-            </ReferencePath>
         </ItemGroup>
     </Target>
 

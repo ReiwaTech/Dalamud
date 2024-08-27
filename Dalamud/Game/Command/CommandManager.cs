@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
 
+using Dalamud.Console;
 using Dalamud.Game.Gui;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
@@ -18,8 +19,8 @@ namespace Dalamud.Game.Command;
 /// This class manages registered in-game slash commands.
 /// </summary>
 [InterfaceVersion("1.0")]
-[ServiceManager.BlockingEarlyLoadedService]
-internal sealed class CommandManager : IServiceType, IDisposable, ICommandManager
+[ServiceManager.EarlyLoadedService]
+internal sealed class CommandManager : IInternalDisposableService, ICommandManager
 {
     private static readonly ModuleLog Log = new("Command");
 
@@ -33,6 +34,9 @@ internal sealed class CommandManager : IServiceType, IDisposable, ICommandManage
 
     [ServiceManager.ServiceDependency]
     private readonly ChatGui chatGui = Service<ChatGui>.Get();
+    
+    [ServiceManager.ServiceDependency]
+    private readonly ConsoleManager console = Service<ConsoleManager>.Get();
 
     [ServiceManager.ServiceConstructor]
     private CommandManager(Dalamud dalamud)
@@ -48,6 +52,7 @@ internal sealed class CommandManager : IServiceType, IDisposable, ICommandManage
         };
 
         this.chatGui.CheckMessageHandled += this.OnCheckMessageHandled;
+        this.console.Invoke += this.ConsoleOnInvoke;
     }
 
     /// <inheritdoc/>
@@ -131,9 +136,15 @@ internal sealed class CommandManager : IServiceType, IDisposable, ICommandManage
     }
 
     /// <inheritdoc/>
-    void IDisposable.Dispose()
+    void IInternalDisposableService.DisposeService()
     {
+        this.console.Invoke -= this.ConsoleOnInvoke;
         this.chatGui.CheckMessageHandled -= this.OnCheckMessageHandled;
+    }
+    
+    private bool ConsoleOnInvoke(string arg)
+    {
+        return arg.StartsWith('/') && this.ProcessCommand(arg);
     }
 
     private void OnCheckMessageHandled(XivChatType type, uint senderId, ref SeString sender, ref SeString message, ref bool isHandled)
@@ -171,7 +182,7 @@ internal sealed class CommandManager : IServiceType, IDisposable, ICommandManage
 #pragma warning disable SA1015
 [ResolveVia<ICommandManager>]
 #pragma warning restore SA1015
-internal class CommandManagerPluginScoped : IDisposable, IServiceType, ICommandManager
+internal class CommandManagerPluginScoped : IInternalDisposableService, ICommandManager
 {
     private static readonly ModuleLog Log = new("Command");
     
@@ -194,7 +205,7 @@ internal class CommandManagerPluginScoped : IDisposable, IServiceType, ICommandM
     public ReadOnlyDictionary<string, CommandInfo> Commands => this.commandManagerService.Commands;
     
     /// <inheritdoc/>
-    public void Dispose()
+    void IInternalDisposableService.DisposeService()
     {
         foreach (var command in this.pluginRegisteredCommands)
         {

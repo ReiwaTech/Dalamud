@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -12,6 +11,7 @@ using Dalamud.Game.Gui;
 using Dalamud.Game.Network.Internal.MarketBoardUploaders;
 using Dalamud.Game.Network.Internal.MarketBoardUploaders.Universalis;
 using Dalamud.Game.Network.Structures;
+using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Hooking;
 using Dalamud.Networking.Http;
 using Dalamud.Utility;
@@ -24,8 +24,8 @@ namespace Dalamud.Game.Network.Internal;
 /// <summary>
 /// This class handles network notifications and uploading market board data.
 /// </summary>
-[ServiceManager.BlockingEarlyLoadedService]
-internal unsafe class NetworkHandlers : IDisposable, IServiceType
+[ServiceManager.EarlyLoadedService]
+internal unsafe class NetworkHandlers : IInternalDisposableService
 {
     private readonly IMarketBoardUploader uploader;
 
@@ -212,7 +212,7 @@ internal unsafe class NetworkHandlers : IDisposable, IServiceType
     /// <summary>
     /// Disposes of managed and unmanaged resources.
     /// </summary>
-    public void Dispose()
+    void IInternalDisposableService.DisposeService()
     {
         this.disposing = true;
         this.Dispose(this.disposing);
@@ -268,8 +268,8 @@ internal unsafe class NetworkHandlers : IDisposable, IServiceType
                 return result;
             }
 
-            var cfcName = cfCondition.Name.ToString();
-            if (cfcName.IsNullOrEmpty())
+            var cfcName = cfCondition.Name.ToDalamudString();
+            if (cfcName.Payloads.Count == 0)
             {
                 cfcName = "Duty Roulette";
                 cfCondition.Image = 112324;
@@ -279,7 +279,10 @@ internal unsafe class NetworkHandlers : IDisposable, IServiceType
             {
                 if (this.configuration.DutyFinderChatMessage)
                 {
-                    Service<ChatGui>.GetNullable()?.Print($"Duty pop: {cfcName}");
+                    var b = new SeStringBuilder();
+                    b.Append("Duty pop: ");
+                    b.Append(cfcName);
+                    Service<ChatGui>.GetNullable()?.Print(b.Build());
                 }
 
                 this.CfPop.InvokeSafely(cfCondition);

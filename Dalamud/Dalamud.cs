@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using Dalamud.Common;
 using Dalamud.Configuration.Internal;
 using Dalamud.Game;
-using Dalamud.Interface.Internal;
 using Dalamud.Plugin.Internal;
 using Dalamud.Storage;
 using Dalamud.Utility;
@@ -34,8 +33,9 @@ internal sealed class Dalamud : IServiceType
 {
     #region Internals
 
+    private static int shownServiceError = 0;
     private readonly ManualResetEvent unloadSignal;
-
+    
     #endregion
 
     /// <summary>
@@ -69,54 +69,47 @@ internal sealed class Dalamud : IServiceType
         
         // Set up FFXIVClientStructs
         this.SetupClientStructsResolver(cacheDir);
-
-        if (!configuration.IsResumeGameAfterPluginLoad)
+        
+        void KickoffGameThread()
         {
+            Log.Verbose("=============== GAME THREAD KICKOFF ===============");
+            Timings.Event("Game thread kickoff");
             NativeFunctions.SetEvent(mainThreadContinueEvent);
-            ServiceManager.InitializeEarlyLoadableServices()
-                          .ContinueWith(t =>
+        }
+
+        void HandleServiceInitFailure(Task t)
+        {
+            Log.Error(t.Exception!, "Service initialization failure");
+            
+            if (Interlocked.CompareExchange(ref shownServiceError, 1, 0) != 0)
+                return;
+
+            Util.Fatal(
+                "Dalamud failed to load all necessary services.\n\nThe game will continue, but you may not be able to use plugins.",
+                "Dalamud", false);
+        }
+
+        ServiceManager.InitializeEarlyLoadableServices()
+                      .ContinueWith(
+                          t =>
                           {
                               if (t.IsCompletedSuccessfully)
                                   return;
-                                  
-                              Log.Error(t.Exception!, "Service initialization failure");
-                              Util.Fatal(
-                                  "Dalamud failed to load all necessary services.\n\nThe game will continue, but you may not be able to use plugins.",
-                                  "Dalamud", false);
+
+                              HandleServiceInitFailure(t);
                           });
-        }
-        else
-        {
-            Task.Run(async () =>
+
+        ServiceManager.BlockingResolved.ContinueWith(
+            t =>
             {
-                try
+                if (t.IsCompletedSuccessfully)
                 {
-                    var tasks = new[]
-                    {
-                        ServiceManager.InitializeEarlyLoadableServices(),
-                        ServiceManager.BlockingResolved,
-                    };
-
-                    await Task.WhenAny(tasks);
-                    var faultedTasks = tasks.Where(x => x.IsFaulted).Select(x => (Exception)x.Exception!).ToArray();
-                    if (faultedTasks.Any())
-                        throw new AggregateException(faultedTasks);
-
-                    NativeFunctions.SetEvent(mainThreadContinueEvent);
-
-                    await Task.WhenAll(tasks);
+                    KickoffGameThread();
+                    return;
                 }
-                catch (Exception e)
-                {
-                    Log.Error(e, "Service initialization failure");
-                    Util.Fatal("Dalamud could not initialize correctly. Please report this error. \n\nThe game will continue, but you may not be able to use plugins.", "Dalamud", false);
-                }
-                finally
-                {
-                    NativeFunctions.SetEvent(mainThreadContinueEvent);
-                }
+
+                HandleServiceInitFailure(t);
             });
-        }
 
         this.DefaultExceptionFilter = NativeFunctions.SetUnhandledExceptionFilter(nint.Zero);
         NativeFunctions.SetUnhandledExceptionFilter(this.DefaultExceptionFilter);
@@ -185,27 +178,6 @@ internal sealed class Dalamud : IServiceType
     public void WaitForUnload()
     {
         this.unloadSignal.WaitOne();
-    }
-
-    /// <summary>
-    /// Dispose subsystems related to plugin handling.
-    /// </summary>
-    public void DisposePlugins()
-    {
-        // this must be done before unloading interface manager, in order to do rebuild
-        // the correct cascaded WndProc (IME -> RawDX11Scene -> Game). Otherwise the game
-        // will not receive any windows messages
-        Service<DalamudIme>.GetNullable()?.Dispose();
-
-        // this must be done before unloading plugins, or it can cause a race condition
-        // due to rendering happening on another thread, where a plugin might receive
-        // a render call after it has been disposed, which can crash if it attempts to
-        // use any resources that it freed in its own Dispose method
-        Service<InterfaceManager>.GetNullable()?.Dispose();
-
-        Service<DalamudInterface>.GetNullable()?.Dispose();
-
-        Service<PluginManager>.GetNullable()?.Dispose();
     }
 
     /// <summary>

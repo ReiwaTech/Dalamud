@@ -1,10 +1,10 @@
 ﻿using System.Diagnostics.CodeAnalysis;
-using System.Drawing;
 using System.Linq;
 
 using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Utility;
+
 using ImGuiNET;
 
 namespace Dalamud.Interface.Internal.Windows.Data.Widgets;
@@ -90,7 +90,7 @@ public class AddonLifecycleWidget : IDataWindowWidget
                         ImGui.Text(listener.AddonName is "" ? "GLOBAL" : listener.AddonName);
 
                         ImGui.TableNextColumn();
-                        ImGui.Text($"{listener.FunctionDelegate.Target}::{listener.FunctionDelegate.Method.Name}");
+                        ImGui.Text($"{listener.FunctionDelegate.Method.DeclaringType.FullName}::{listener.FunctionDelegate.Method.Name}");
                     }
                     
                     ImGui.EndTable();

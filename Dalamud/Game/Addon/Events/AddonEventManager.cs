@@ -18,8 +18,8 @@ namespace Dalamud.Game.Addon.Events;
 /// Service provider for addon event management.
 /// </summary>
 [InterfaceVersion("1.0")]
-[ServiceManager.BlockingEarlyLoadedService]
-internal unsafe class AddonEventManager : IDisposable, IServiceType
+[ServiceManager.EarlyLoadedService]
+internal unsafe class AddonEventManager : IInternalDisposableService
 {
     /// <summary>
     /// PluginName for Dalamud Internal use.
@@ -62,7 +62,7 @@ internal unsafe class AddonEventManager : IDisposable, IServiceType
     private delegate nint UpdateCursorDelegate(RaptureAtkModule* module);
 
     /// <inheritdoc/>
-    public void Dispose()
+    void IInternalDisposableService.DisposeService()
     {
         this.onUpdateCursor.Dispose();
 
@@ -204,7 +204,7 @@ internal unsafe class AddonEventManager : IDisposable, IServiceType
 #pragma warning disable SA1015
 [ResolveVia<IAddonEventManager>]
 #pragma warning restore SA1015
-internal class AddonEventManagerPluginScoped : IDisposable, IServiceType, IAddonEventManager
+internal class AddonEventManagerPluginScoped : IInternalDisposableService, IAddonEventManager
 {
     [ServiceManager.ServiceDependency]
     private readonly AddonEventManager eventManagerService = Service<AddonEventManager>.Get();
@@ -221,11 +221,11 @@ internal class AddonEventManagerPluginScoped : IDisposable, IServiceType, IAddon
     {
         this.plugin = plugin;
         
-        this.eventManagerService.AddPluginEventController(plugin.Manifest.WorkingPluginId);
+        this.eventManagerService.AddPluginEventController(plugin.EffectiveWorkingPluginId);
     }
 
     /// <inheritdoc/>
-    public void Dispose()
+    void IInternalDisposableService.DisposeService()
     {
         // if multiple plugins force cursors and dispose without un-forcing them then all forces will be cleared.
         if (this.isForcingCursor)
@@ -233,16 +233,16 @@ internal class AddonEventManagerPluginScoped : IDisposable, IServiceType, IAddon
             this.eventManagerService.ResetCursor();
         }
         
-        this.eventManagerService.RemovePluginEventController(this.plugin.Manifest.WorkingPluginId);
+        this.eventManagerService.RemovePluginEventController(this.plugin.EffectiveWorkingPluginId);
     }
     
     /// <inheritdoc/>
     public IAddonEventHandle? AddEvent(IntPtr atkUnitBase, IntPtr atkResNode, AddonEventType eventType, IAddonEventManager.AddonEventHandler eventHandler) 
-        => this.eventManagerService.AddEvent(this.plugin.Manifest.WorkingPluginId, atkUnitBase, atkResNode, eventType, eventHandler);
+        => this.eventManagerService.AddEvent(this.plugin.EffectiveWorkingPluginId, atkUnitBase, atkResNode, eventType, eventHandler);
 
     /// <inheritdoc/>
     public void RemoveEvent(IAddonEventHandle eventHandle)
-        => this.eventManagerService.RemoveEvent(this.plugin.Manifest.WorkingPluginId, eventHandle);
+        => this.eventManagerService.RemoveEvent(this.plugin.EffectiveWorkingPluginId, eventHandle);
     
     /// <inheritdoc/>
     public void SetCursor(AddonCursorType cursor)
