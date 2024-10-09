@@ -50,7 +50,7 @@ jobs:
             bin/Release/Dalamud.*.exe
             bin/Release/FFXIVClientStructs.dll
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: dalamud-artifact
           path: bin\Release
@@ -69,7 +69,7 @@ jobs:
       run: |
         dotnet tool install -g Microsoft.DotNet.ApiCompat.Tool
     - name: "Download Proposed Artifacts"
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v4.1.7
       with:
         name: dalamud-artifact
         path: .\right
@@ -106,7 +106,7 @@ jobs:
       with:
         repository: ReiwaTech/dalamud-distrib
         ssh-key: ${{ secrets.DEPLOY_SSH }}
-    - uses: actions/download-artifact@v2
+    - uses: actions/download-artifact@v4.1.7
       with:
         name: dalamud-artifact
         path: .\scratch
