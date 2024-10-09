@@ -135,6 +135,8 @@ internal class PluginInstallerWindow : Window, IDisposable
     private LoadingIndicatorKind loadingIndicatorKind = LoadingIndicatorKind.Unknown;
 
     private string verifiedCheckmarkHoveredPlugin = string.Empty;
+    
+    private string? staleDalamudNewVersion = null;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginInstallerWindow"/> class.
@@ -292,6 +294,22 @@ internal class PluginInstallerWindow : Window, IDisposable
         }
 
         this.profileManagerWidget.Reset();
+
+        var config = Service<DalamudConfiguration>.Get();
+        if (this.staleDalamudNewVersion == null && !config.DalamudBetaKind.IsNullOrEmpty())
+        {
+            Service<DalamudReleases>.Get().GetVersionForCurrentTrack().ContinueWith(t =>
+            {
+                if (!t.IsCompletedSuccessfully)
+                    return;
+                
+                var versionInfo = t.Result;
+                if (versionInfo.AssemblyVersion != Util.GetGitHash() &&
+                    versionInfo.Track != "release" &&
+                    string.Equals(versionInfo.Key, config.DalamudBetaKey, StringComparison.OrdinalIgnoreCase))
+                    this.staleDalamudNewVersion = versionInfo.AssemblyVersion;
+            });
+        }
     }
 
     /// <inheritdoc/>
@@ -1488,8 +1506,7 @@ internal class PluginInstallerWindow : Window, IDisposable
             return;
         }
 
-        var pm = Service<PluginManager>.Get();
-        if (pm.SafeMode)
+        void DrawWarningIcon()
         {
             ImGuiHelpers.ScaledDummy(10);
 
@@ -1498,15 +1515,34 @@ internal class PluginInstallerWindow : Window, IDisposable
             ImGuiHelpers.CenteredText(FontAwesomeIcon.ExclamationTriangle.ToIconString());
             ImGui.PopFont();
             ImGui.PopStyleColor();
-
-            var lines = Locs.SafeModeDisclaimer.Split('\n');
+        }
+        
+        void DrawLinesCentered(string text)
+        {
+            var lines = text.Split('\n');
             foreach (var line in lines)
             {
                 ImGuiHelpers.CenteredText(line);
             }
+        }
+        
+        var pm = Service<PluginManager>.Get();
+        if (pm.SafeMode)
+        {
+            DrawWarningIcon();
+            DrawLinesCentered(Locs.SafeModeDisclaimer);
 
             ImGuiHelpers.ScaledDummy(10);
-            ImGui.Separator();
+        }
+
+        if (this.staleDalamudNewVersion != null)
+        {
+            DrawWarningIcon();
+            DrawLinesCentered("A new version of Dalamud is available.\n" +
+                              "Please restart the game to ensure compatibility with updated plugins.\n" +
+                              $"old: {Util.GetGitHash()} new: {this.staleDalamudNewVersion}");
+
+            ImGuiHelpers.ScaledDummy(10);
         }
 
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, ImGuiHelpers.ScaledVector2(1, 3));
