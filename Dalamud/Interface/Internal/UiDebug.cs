@@ -1,9 +1,8 @@
 using System.Numerics;
-using System.Runtime.CompilerServices;
 
 using Dalamud.Game.Gui;
+using Dalamud.Interface.Internal.ImGuiSeStringRenderer;
 using Dalamud.Interface.Utility;
-using Dalamud.Memory;
 using Dalamud.Utility;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using ImGuiNET;
@@ -189,6 +188,7 @@ internal unsafe class UiDebug
                 case NodeType.Image: Util.ShowStruct(*(AtkImageNode*)node, (ulong)node); break;
                 case NodeType.Collision: Util.ShowStruct(*(AtkCollisionNode*)node, (ulong)node); break;
                 case NodeType.NineGrid: Util.ShowStruct(*(AtkNineGridNode*)node, (ulong)node); break;
+                case NodeType.ClippingMask: Util.ShowStruct(*(AtkClippingMaskNode*)node, (ulong)node); break;
                 case NodeType.Counter: Util.ShowStruct(*(AtkCounterNode*)node, (ulong)node); break;
                 default: Util.ShowStruct(*node, (ulong)node); break;
             }
@@ -202,7 +202,9 @@ internal unsafe class UiDebug
             {
                 case NodeType.Text:
                     var textNode = (AtkTextNode*)node;
-                    ImGui.Text($"text: {MemoryHelper.ReadSeStringAsString(out _, (nint)textNode->NodeText.StringPtr)}");
+                    ImGui.Text("text: ");
+                    ImGui.SameLine();
+                    Service<SeStringRenderer>.Get().DrawWrapped(textNode->NodeText);
 
                     ImGui.InputText($"Replace Text##{(ulong)textNode:X}", new IntPtr(textNode->NodeText.StringPtr), (uint)textNode->NodeText.BufSize);
 
@@ -229,52 +231,21 @@ internal unsafe class UiDebug
                     break;
                 case NodeType.Counter:
                     var counterNode = (AtkCounterNode*)node;
-                    ImGui.Text($"text: {MemoryHelper.ReadSeStringAsString(out _, (nint)counterNode->NodeText.StringPtr)}");
+                    ImGui.Text("text: ");
+                    ImGui.SameLine();
+                    Service<SeStringRenderer>.Get().DrawWrapped(counterNode->NodeText);
                     break;
                 case NodeType.Image:
                     var imageNode = (AtkImageNode*)node;
-                    if (imageNode->PartsList != null)
-                    {
-                        if (imageNode->PartId > imageNode->PartsList->PartCount)
-                        {
-                            ImGui.Text("part id > part count?");
-                        }
-                        else
-                        {
-                            var textureInfo = imageNode->PartsList->Parts[imageNode->PartId].UldAsset;
-                            var texType = textureInfo->AtkTexture.TextureType;
-                            ImGui.Text($"texture type: {texType} part_id={imageNode->PartId} part_id_count={imageNode->PartsList->PartCount}");
-                            if (texType == TextureType.Resource)
-                            {
-                                var texFileNameStdString = &textureInfo->AtkTexture.Resource->TexFileResourceHandle->ResourceHandle.FileName;
-                                var texString = texFileNameStdString->Length < 16
-                                                    ? MemoryHelper.ReadSeStringAsString(out _, (nint)texFileNameStdString->Buffer)
-                                                    : MemoryHelper.ReadSeStringAsString(out _, (nint)texFileNameStdString->BufferPtr);
-
-                                ImGui.Text($"texture path: {texString}");
-                                var kernelTexture = textureInfo->AtkTexture.Resource->KernelTextureObject;
-
-                                if (ImGui.TreeNode($"Texture##{(ulong)kernelTexture->D3D11ShaderResourceView:X}"))
-                                {
-                                    ImGui.Image(new IntPtr(kernelTexture->D3D11ShaderResourceView), new Vector2(kernelTexture->Width, kernelTexture->Height));
-                                    ImGui.TreePop();
-                                }
-                            }
-                            else if (texType == TextureType.KernelTexture)
-                            {
-                                if (ImGui.TreeNode($"Texture##{(ulong)textureInfo->AtkTexture.KernelTexture->D3D11ShaderResourceView:X}"))
-                                {
-                                    ImGui.Image(new IntPtr(textureInfo->AtkTexture.KernelTexture->D3D11ShaderResourceView), new Vector2(textureInfo->AtkTexture.KernelTexture->Width, textureInfo->AtkTexture.KernelTexture->Height));
-                                    ImGui.TreePop();
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        ImGui.Text("no texture loaded");
-                    }
-
+                    PrintTextureInfo(imageNode->PartsList, imageNode->PartId);
+                    break;
+                case NodeType.NineGrid:
+                    var ngNode = (AtkNineGridNode*)node;
+                    PrintTextureInfo(ngNode->PartsList, ngNode->PartId);
+                    break;
+                case NodeType.ClippingMask:
+                    var cmNode = (AtkClippingMaskNode*)node;
+                    PrintTextureInfo(cmNode->PartsList, cmNode->PartId);
                     break;
             }
 
@@ -287,6 +258,55 @@ internal unsafe class UiDebug
 
         if (isVisible && !popped)
             ImGui.PopStyleColor();
+
+        static void PrintTextureInfo(AtkUldPartsList* partsList, uint partId)
+        {
+            if (partsList != null)
+            {
+                if (partId > partsList->PartCount)
+                {
+                    ImGui.Text("part id > part count?");
+                }
+                else
+                {
+                    var textureInfo = partsList->Parts[partId].UldAsset;
+                    var texType = textureInfo->AtkTexture.TextureType;
+                    ImGui.Text(
+                        $"texture type: {texType} part_id={partId} part_id_count={partsList->PartCount}");
+                    if (texType == TextureType.Resource)
+                    {
+                        ImGui.Text(
+                            $"texture path: {textureInfo->AtkTexture.Resource->TexFileResourceHandle->ResourceHandle.FileName}");
+                        var kernelTexture = textureInfo->AtkTexture.Resource->KernelTextureObject;
+
+                        if (ImGui.TreeNode($"Texture##{(ulong)kernelTexture->D3D11ShaderResourceView:X}"))
+                        {
+                            ImGui.Image(
+                                new IntPtr(kernelTexture->D3D11ShaderResourceView),
+                                new Vector2(kernelTexture->Width, kernelTexture->Height));
+                            ImGui.TreePop();
+                        }
+                    }
+                    else if (texType == TextureType.KernelTexture)
+                    {
+                        if (ImGui.TreeNode(
+                                $"Texture##{(ulong)textureInfo->AtkTexture.KernelTexture->D3D11ShaderResourceView:X}"))
+                        {
+                            ImGui.Image(
+                                new IntPtr(textureInfo->AtkTexture.KernelTexture->D3D11ShaderResourceView),
+                                new Vector2(
+                                    textureInfo->AtkTexture.KernelTexture->Width,
+                                    textureInfo->AtkTexture.KernelTexture->Height));
+                            ImGui.TreePop();
+                        }
+                    }
+                }
+            }
+            else
+            {
+                ImGui.Text("no texture loaded");
+            }
+        }
     }
 
     private void PrintComponentNode(AtkResNode* node, string treePrefix)
@@ -350,13 +370,33 @@ internal unsafe class UiDebug
             {
                 case ComponentType.TextInput:
                     var textInputComponent = (AtkComponentTextInput*)compNode->Component;
-                    ImGui.Text($"InputBase Text1: {MemoryHelper.ReadSeStringAsString(out _, new IntPtr(textInputComponent->AtkComponentInputBase.UnkText1.StringPtr))}");
-                    ImGui.Text($"InputBase Text2: {MemoryHelper.ReadSeStringAsString(out _, new IntPtr(textInputComponent->AtkComponentInputBase.UnkText2.StringPtr))}");
-                    ImGui.Text($"Text1: {MemoryHelper.ReadSeStringAsString(out _, new IntPtr(textInputComponent->UnkText01.StringPtr))}");
-                    ImGui.Text($"Text2: {MemoryHelper.ReadSeStringAsString(out _, new IntPtr(textInputComponent->UnkText02.StringPtr))}");
-                    ImGui.Text($"Text3: {MemoryHelper.ReadSeStringAsString(out _, new IntPtr(textInputComponent->UnkText03.StringPtr))}");
-                    ImGui.Text($"Text4: {MemoryHelper.ReadSeStringAsString(out _, new IntPtr(textInputComponent->UnkText04.StringPtr))}");
-                    ImGui.Text($"Text5: {MemoryHelper.ReadSeStringAsString(out _, new IntPtr(textInputComponent->UnkText05.StringPtr))}");
+                    ImGui.Text("InputBase Text1: ");
+                    ImGui.SameLine();
+                    Service<SeStringRenderer>.Get().DrawWrapped(textInputComponent->AtkComponentInputBase.UnkText1);
+                    
+                    ImGui.Text("InputBase Text2: ");
+                    ImGui.SameLine();
+                    Service<SeStringRenderer>.Get().DrawWrapped(textInputComponent->AtkComponentInputBase.UnkText2);
+                    
+                    ImGui.Text("Text1: ");
+                    ImGui.SameLine();
+                    Service<SeStringRenderer>.Get().DrawWrapped(textInputComponent->UnkText01);
+                    
+                    ImGui.Text("Text2: ");
+                    ImGui.SameLine();
+                    Service<SeStringRenderer>.Get().DrawWrapped(textInputComponent->UnkText02);
+                    
+                    ImGui.Text("Text3: ");
+                    ImGui.SameLine();
+                    Service<SeStringRenderer>.Get().DrawWrapped(textInputComponent->UnkText03);
+                    
+                    ImGui.Text("Text4: ");
+                    ImGui.SameLine();
+                    Service<SeStringRenderer>.Get().DrawWrapped(textInputComponent->UnkText04);
+                    
+                    ImGui.Text("Text5: ");
+                    ImGui.SameLine();
+                    Service<SeStringRenderer>.Get().DrawWrapped(textInputComponent->UnkText05);
                     break;
             }
 
@@ -541,11 +581,13 @@ internal unsafe class UiDebug
     private Vector2 GetNodePosition(AtkResNode* node)
     {
         var pos = new Vector2(node->X, node->Y);
+        pos -= new Vector2(node->OriginX * (node->ScaleX - 1), node->OriginY * (node->ScaleY - 1));
         var par = node->ParentNode;
         while (par != null)
         {
             pos *= new Vector2(par->ScaleX, par->ScaleY);
             pos += new Vector2(par->X, par->Y);
+            pos -= new Vector2(par->OriginX * (par->ScaleX - 1), par->OriginY * (par->ScaleY - 1));
             par = par->ParentNode;
         }
 

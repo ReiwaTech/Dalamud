@@ -16,10 +16,17 @@ namespace Dalamud.Game.Config;
 [ServiceManager.EarlyLoadedService]
 internal sealed class GameConfig : IInternalDisposableService, IGameConfig
 {
-    private readonly TaskCompletionSource tcsInitialization = new();
-    private readonly TaskCompletionSource<GameConfigSection> tcsSystem = new();
-    private readonly TaskCompletionSource<GameConfigSection> tcsUiConfig = new();
-    private readonly TaskCompletionSource<GameConfigSection> tcsUiControl = new(); 
+    private readonly TaskCompletionSource tcsInitialization =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private readonly TaskCompletionSource<GameConfigSection> tcsSystem =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private readonly TaskCompletionSource<GameConfigSection> tcsUiConfig =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private readonly TaskCompletionSource<GameConfigSection> tcsUiControl =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private readonly GameConfigAddressResolver address = new();
     private Hook<ConfigChangeDelegate>? configChangeHook;
@@ -114,7 +121,10 @@ internal sealed class GameConfig : IInternalDisposableService, IGameConfig
     
     /// <inheritdoc/>
     public bool TryGet(SystemConfigOption option, out StringConfigProperties? properties) => this.System.TryGetProperties(option.GetName(), out properties);
-    
+
+    /// <inheritdoc/>
+    public bool TryGet(SystemConfigOption option, out PadButtonValue value) => this.System.TryGetStringAsEnum(option.GetName(), out value);
+
     /// <inheritdoc/>
     public bool TryGet(UiConfigOption option, out bool value) => this.UiConfig.TryGet(option.GetName(), out value);
 
@@ -339,7 +349,11 @@ internal class GameConfigPluginScoped : IInternalDisposableService, IGameConfig
     /// <inheritdoc/>
     public bool TryGet(SystemConfigOption option, out StringConfigProperties? properties)
         => this.gameConfigService.TryGet(option, out properties);
-    
+
+    /// <inheritdoc/>
+    public bool TryGet(SystemConfigOption option, out PadButtonValue value)
+        => this.gameConfigService.TryGet(option, out value);
+
     /// <inheritdoc/>
     public bool TryGet(UiConfigOption option, out bool value)
         => this.gameConfigService.TryGet(option, out value);

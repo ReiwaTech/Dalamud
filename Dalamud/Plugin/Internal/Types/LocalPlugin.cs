@@ -6,8 +6,6 @@ using System.Threading.Tasks;
 
 using Dalamud.Configuration.Internal;
 using Dalamud.Game;
-using Dalamud.Game.Gui;
-using Dalamud.Game.Gui.Dtr;
 using Dalamud.Interface.Internal;
 using Dalamud.IoC.Internal;
 using Dalamud.Logging.Internal;
@@ -15,7 +13,6 @@ using Dalamud.Plugin.Internal.Exceptions;
 using Dalamud.Plugin.Internal.Loader;
 using Dalamud.Plugin.Internal.Profiles;
 using Dalamud.Plugin.Internal.Types.Manifest;
-using Dalamud.Utility;
 
 namespace Dalamud.Plugin.Internal.Types;
 
@@ -417,24 +414,16 @@ internal class LocalPlugin : IDisposable
 
             try
             {
-                if (this.manifest.LoadSync && this.manifest.LoadRequiredState is 0 or 1)
-                {
-                    var newInstance = await framework.RunOnFrameworkThread(
-                                        () => this.ServiceScope.CreateAsync(
-                                            this.pluginType!,
-                                            this.DalamudInterface!)).ConfigureAwait(false);
-                    
-                    this.instance = newInstance as IDalamudPlugin;
-                }
-                else
-                {
-                    this.instance =
-                        await this.ServiceScope.CreateAsync(this.pluginType!, this.DalamudInterface!) as IDalamudPlugin;
-                }
+                var forceFrameworkThread = this.manifest.LoadSync && this.manifest.LoadRequiredState is 0 or 1;
+                var newInstanceTask = forceFrameworkThread ? framework.RunOnFrameworkThread(Create) : Create();
+                this.instance = await newInstanceTask.ConfigureAwait(false);
+
+                async Task<IDalamudPlugin> Create() =>
+                    (IDalamudPlugin)await this.ServiceScope!.CreateAsync(this.pluginType!, this.DalamudInterface!);
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Exception in plugin constructor");
+                Log.Error(ex, "Exception during plugin initialization");
                 this.instance = null;
             }
 
@@ -548,9 +537,6 @@ internal class LocalPlugin : IDisposable
         }
         finally
         {
-            // We need to handle removed DTR nodes here, as otherwise, plugins will not be able to re-add their bar entries after updates.
-            Service<DtrBar>.GetNullable()?.HandleRemovedNodes();
-
             this.pluginLoadStateLock.Release();
         }
     }

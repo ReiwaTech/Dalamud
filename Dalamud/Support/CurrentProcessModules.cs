@@ -8,7 +8,7 @@ namespace Dalamud.Support;
 /// <summary>Tracks the loaded process modules.</summary>
 internal static unsafe partial class CurrentProcessModules
 {
-    private static Process? process;
+    private static ProcessModuleCollection? moduleCollection;
 
     /// <summary>Gets all the loaded modules, up to date.</summary>
     public static ProcessModuleCollection ModuleCollection
@@ -19,11 +19,19 @@ internal static unsafe partial class CurrentProcessModules
             if (t != 0)
             {
                 t = 0;
-                process = null;
-                Log.Verbose("{what}: Fetchling fresh copy of current process modules.", nameof(CurrentProcessModules));
+                moduleCollection = null;
+                Log.Verbose("{what}: Fetching fresh copy of current process modules.", nameof(CurrentProcessModules));
             }
 
-            return (process ??= Process.GetCurrentProcess()).Modules;
+            try
+            {
+                return moduleCollection ??= Process.GetCurrentProcess().Modules;
+            }
+            catch (Exception e)
+            {
+                Log.Verbose(e, "{what}: Failed to fetch module list.", nameof(CurrentProcessModules));
+                return new([]);
+            }
         }
     }
 

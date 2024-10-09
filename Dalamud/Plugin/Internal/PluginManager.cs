@@ -15,13 +15,11 @@ using Dalamud.Configuration;
 using Dalamud.Configuration.Internal;
 using Dalamud.Game;
 using Dalamud.Game.Gui;
-using Dalamud.Game.Gui.Dtr;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Interface;
 using Dalamud.Interface.Internal;
-using Dalamud.Interface.Internal.Windows.PluginInstaller;
 using Dalamud.IoC;
 using Dalamud.Logging.Internal;
 using Dalamud.Networking.Http;
@@ -258,12 +256,6 @@ internal class PluginManager : IInternalDisposableService
     /// <returns>If the manifest is visible.</returns>
     public static bool IsManifestVisible(RemotePluginManifest manifest)
     {
-        var configuration = Service<DalamudConfiguration>.Get();
-
-        // Hidden by user
-        if (configuration.HiddenPluginInternalName.Contains(manifest.InternalName))
-            return false;
-
         // Hidden by manifest
         return !manifest.IsHide;
     }
@@ -1128,10 +1120,6 @@ internal class PluginManager : IInternalDisposableService
                 updateStatus.Status = PluginUpdateStatus.StatusKind.FailedUnload;
                 return updateStatus;
             }
-
-            // We need to handle removed DTR nodes here, as otherwise, plugins will not be able to re-add their bar entries after updates.
-            var dtr = Service<DtrBar>.Get();
-            dtr.HandleRemovedNodes();
 
             try
             {
