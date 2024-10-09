@@ -67,15 +67,29 @@ internal class SwapChainVtableResolver : BaseAddressResolver, ISwapChainAddressR
 
                 if (!fileInfo.FileDescription.Contains("GShade") && !fileInfo.FileDescription.Contains("ReShade"))
                     break;
-
+ 
+                // warning: these comments may no longer be accurate.
                 // reshade master@4232872 RVA
                 // var p = processModule.BaseAddress + 0x82C7E0; // DXGISwapChain::Present
                 // var p = processModule.BaseAddress + 0x82FAC0; // DXGISwapChain::runtime_present
-
-                // DXGISwapChain::handle_device_loss => DXGISwapChain::Present => DXGISwapChain::runtime_present
+                // DXGISwapChain::handle_device_loss =>df DXGISwapChain::Present => DXGISwapChain::runtime_present
+                // 5.2+ - F6 C2 01 0F 85
+                // 6.0+ - F6 C2 01 0F 85 88
 
                 var scanner = new SigScanner(processModule);
-                var runtimePresentSig = "F6 C2 01 0F 85 ?? ?? ?? ??";
+                var runtimePresentSig = "F6 C2 01 0F 85"; // NOTE: This sig is from reshade's DLL, normally dxgi.dll.
+
+                try
+                {
+                    if (fileInfo.FileVersion.StartsWith("6."))
+                    {
+                        runtimePresentSig = "F6 C2 01 0F 85 88";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Failed to get reshade version info - falling back to 5.x signature");
+                }
 
                 try
                 {
@@ -88,13 +102,13 @@ internal class SwapChainVtableResolver : BaseAddressResolver, ISwapChainAddressR
                 }
                 catch (Exception ex)
                 {
-                    Log.Error(ex, "Failed to get reshade version info - falling back to default DXGISwapChain::runtime_present signature");
+                    Log.Error(ex, "Failed to get reshade version info - falling back to default DXGISwapChain::on_present signature");
                 }
 
                 try
                 {
                     var p = scanner.ScanText(runtimePresentSig);
-                    Log.Information($"ReShade DLL: {processModule.FileName} with DXGISwapChain::runtime_present at {p:X}");
+                    Log.Information($"ReShade DLL: {processModule.FileName} with DXGISwapChain::on_present at {p:X}");
 
                     this.Present = p;
                     this.IsReshade = true;
@@ -102,7 +116,7 @@ internal class SwapChainVtableResolver : BaseAddressResolver, ISwapChainAddressR
                 }
                 catch (Exception ex)
                 {
-                    Log.Error(ex, "Could not find reshade DXGISwapChain::runtime_present offset!");
+                    Log.Error(ex, "Could not find reshade DXGISwapChain::on_present offset!");
                 }
             }
         }

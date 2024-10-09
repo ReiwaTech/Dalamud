@@ -133,7 +133,9 @@ internal class DalamudInterface : IInternalDisposableService
         this.changelogWindow = new ChangelogWindow(
             this.titleScreenMenuWindow,
             fontAtlasFactory,
-            dalamudAssetManager) { IsOpen = false };
+            dalamudAssetManager,
+            gameGui,
+            framework) { IsOpen = false };
         this.profilerWindow = new ProfilerWindow() { IsOpen = false };
         this.branchSwitcherWindow = new BranchSwitcherWindow() { IsOpen = false };
         this.hitchSettingsWindow = new HitchSettingsWindow() { IsOpen = false };
@@ -209,6 +211,15 @@ internal class DalamudInterface : IInternalDisposableService
     {
         get => this.isImGuiDrawDevMenu;
         set => this.isImGuiDrawDevMenu = value;
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the plugin installer is open.
+    /// </summary>
+    public bool IsPluginInstallerOpen
+    {
+        get => this.pluginWindow.IsOpen;
+        set => this.pluginWindow.IsOpen = value;
     }
 
     /// <inheritdoc/>
@@ -782,7 +793,7 @@ internal class DalamudInterface : IInternalDisposableService
                             unsafe
                             {
                                 var hook = Hook<CrashDebugDelegate>.FromAddress(
-                                    (nint)UIModule.StaticVTable.GetUIInputData,
+                                    (nint)UIModule.StaticVirtualTablePointer->GetUIInputData,
                                     self =>
                                     {
                                         _ = *(byte*)0;
@@ -810,7 +821,7 @@ internal class DalamudInterface : IInternalDisposableService
 
                     ImGui.MenuItem(Util.AssemblyVersion, false);
                     ImGui.MenuItem(this.dalamud.StartInfo.GameVersion?.ToString() ?? "Unknown version", false);
-                    ImGui.MenuItem($"D: {Util.GetGitHash()}[{Util.GetGitCommitCount()}] CS: {Util.GetGitHashClientStructs()}[{FFXIVClientStructs.Interop.Resolver.Version}]", false);
+                    ImGui.MenuItem($"D: {Util.GetGitHash()}[{Util.GetGitCommitCount()}] CS: {Util.GetGitHashClientStructs()}[{FFXIVClientStructs.ThisAssembly.Git.Commits}]", false);
                     ImGui.MenuItem($"CLR: {Environment.Version}", false);
 
                     ImGui.EndMenu();
