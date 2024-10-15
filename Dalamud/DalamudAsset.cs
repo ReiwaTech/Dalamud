@@ -125,13 +125,14 @@ public enum DalamudAsset
     TitleScreenMenuShade = 1013,
 
     /// <summary>
-    /// <see cref="DalamudAssetPurpose.Font"/>: Noto Sans CJK JP Medium.
+    /// <see cref="DalamudAssetPurpose.Font"/>: Noto Sans CJK SC Medium.
     /// </summary>
     [DalamudAsset(DalamudAssetPurpose.Font)]
-    [DalamudAssetPath("UIRes", "NotoSansCJKjp-Regular.otf")]
-    [DalamudAssetPath("UIRes", "NotoSansCJKjp-Medium.otf")]
-    NotoSansJpMedium = 2000,
-
+    [DalamudAssetPath("UIRes", "NotoSansCJKsc-Regular.otf")]
+    [DalamudAssetPath("UIRes", "NotoSansCJKsc-Medium.otf")]
+    NotoSansScMedium = 2000,
+    
+    /*
     /// <summary>
     /// <see cref="DalamudAssetPurpose.Font"/>: Noto Sans CJK KR Regular.
     /// </summary>
@@ -139,6 +140,7 @@ public enum DalamudAsset
     [DalamudAssetPath("UIRes", "NotoSansCJKkr-Regular.otf")]
     [DalamudAssetPath("UIRes", "NotoSansKR-Regular.otf")]
     NotoSansKrRegular = 2001,
+    */
 
     /// <summary>
     /// <see cref="DalamudAssetPurpose.Font"/>: Inconsolata Regular.

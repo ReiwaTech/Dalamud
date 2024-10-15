@@ -130,7 +130,7 @@ internal sealed partial class FontAtlasFactory
                 }
                 : new SingleFontSpec
                 {
-                    FontId = new DalamudAssetFontAndFamilyId(DalamudAsset.NotoSansJpMedium),
+                    FontId = new DalamudAssetFontAndFamilyId(DalamudAsset.NotoSansScMedium),
                     SizePx = InterfaceManager.DefaultFontSizePx + 1,
                 });
 
