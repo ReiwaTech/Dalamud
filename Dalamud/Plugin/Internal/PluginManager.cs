@@ -163,6 +163,27 @@ internal class PluginManager : IInternalDisposableService
     public static int DalamudApiLevel { get; private set; }
 
     /// <summary>
+    /// Gets the number of loaded plugins.
+    /// </summary>
+    public int LoadedPluginCount
+    {
+        get
+        {
+            var res = 0;
+            lock (this.pluginListLock)
+            {
+                foreach (var p in this.installedPluginsList)
+                {
+                    if (p.State == PluginState.Loaded)
+                        res++;
+                }
+            }
+
+            return res;
+        }
+    }
+
+    /// <summary>
     /// Gets a copy of the list of all loaded plugins.
     /// </summary>
     public IEnumerable<LocalPlugin> InstalledPlugins
@@ -772,11 +793,7 @@ internal class PluginManager : IInternalDisposableService
             
             Log.Verbose("Scanning dev plugins at {Path}", setting.Path);
 
-            if (Directory.Exists(setting.Path))
-            {
-                devDllFiles.AddRange(new DirectoryInfo(setting.Path).GetFiles("*.dll", SearchOption.AllDirectories));
-            }
-            else if (File.Exists(setting.Path))
+            if (File.Exists(setting.Path))
             {
                 devDllFiles.Add(new FileInfo(setting.Path));
             }

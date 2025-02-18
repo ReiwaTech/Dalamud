@@ -46,9 +46,9 @@ internal class UniversalisMarketBoardUploader : IMarketBoardUploader
 
         var uploadObject = new UniversalisItemUploadRequest
         {
-            WorldId = clientState.LocalPlayer?.CurrentWorld.Id ?? 0,
+            WorldId = clientState.LocalPlayer?.CurrentWorld.RowId ?? 0,
             UploaderId = uploader.ToString(),
-            ItemId = request.Listings.FirstOrDefault()?.CatalogId ?? 0,
+            ItemId = request.CatalogId,
             Listings = [],
             Sales = [],
         };
@@ -102,11 +102,18 @@ internal class UniversalisMarketBoardUploader : IMarketBoardUploader
         var uploadPath = "/upload";
         var uploadData = JsonConvert.SerializeObject(uploadObject);
         Log.Verbose("{ListingPath}: {ListingUpload}", uploadPath, uploadData);
-        await this.httpClient.PostAsync($"{ApiBase}{uploadPath}/{ApiKey}", new StringContent(uploadData, Encoding.UTF8, "application/json"));
+        var response = await this.httpClient.PostAsync($"{ApiBase}{uploadPath}/{ApiKey}", new StringContent(uploadData, Encoding.UTF8, "application/json"));
 
-        // ====================================================================================
-
-        Log.Verbose("Universalis data upload for item#{CatalogId} completed", request.Listings.FirstOrDefault()?.CatalogId ?? 0);
+        if (response.IsSuccessStatusCode)
+        {
+            Log.Verbose("Universalis data upload for item#{CatalogId} completed", request.CatalogId);
+        }
+        else
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            Log.Warning("Universalis data upload for item#{CatalogId} returned status code {StatusCode}.\n" +
+                        "    Response Body: {Body}", request.CatalogId, response.StatusCode, body);
+        }
     }
 
     /// <inheritdoc/>
@@ -120,7 +127,7 @@ internal class UniversalisMarketBoardUploader : IMarketBoardUploader
 
         var taxUploadObject = new UniversalisTaxUploadRequest
         {
-            WorldId = clientState.LocalPlayer?.CurrentWorld.Id ?? 0,
+            WorldId = clientState.LocalPlayer?.CurrentWorld.RowId ?? 0,
             UploaderId = clientState.LocalContentId.ToString(),
             TaxData = new UniversalisTaxData
             {
@@ -131,6 +138,7 @@ internal class UniversalisMarketBoardUploader : IMarketBoardUploader
                 Kugane = taxRates.KuganeTax,
                 Crystarium = taxRates.CrystariumTax,
                 Sharlayan = taxRates.SharlayanTax,
+                Tuliyollal = taxRates.TuliyollalTax,
             },
         };
 
@@ -158,7 +166,7 @@ internal class UniversalisMarketBoardUploader : IMarketBoardUploader
             return;
 
         var itemId = purchaseHandler.CatalogId;
-        var worldId = clientState.LocalPlayer?.CurrentWorld.Id ?? 0;
+        var worldId = clientState.LocalPlayer?.CurrentWorld.RowId ?? 0;
 
         // ====================================================================================
 

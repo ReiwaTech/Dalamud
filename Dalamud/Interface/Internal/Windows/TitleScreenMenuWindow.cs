@@ -5,8 +5,11 @@ using System.Numerics;
 using Dalamud.Configuration.Internal;
 using Dalamud.Console;
 using Dalamud.Game;
+using Dalamud.Game.Addon.Lifecycle;
+using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Game.ClientState;
 using Dalamud.Game.Gui;
+using Dalamud.Game.Text;
 using Dalamud.Interface.Animation.EasingFunctions;
 using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.ManagedFontAtlas.Internals;
@@ -14,11 +17,18 @@ using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using Dalamud.Plugin.Internal;
 using Dalamud.Plugin.Services;
 using Dalamud.Storage.Assets;
 using Dalamud.Utility;
 
+using FFXIVClientStructs.FFXIV.Component.GUI;
+
 using ImGuiNET;
+
+using Lumina.Text.ReadOnly;
+
+using LSeStringBuilder = Lumina.Text.SeStringBuilder;
 
 namespace Dalamud.Interface.Internal.Windows;
 
@@ -39,7 +49,8 @@ internal class TitleScreenMenuWindow : Window, IDisposable
     private readonly IFontAtlas privateAtlas;
     private readonly Lazy<IFontHandle> myFontHandle;
     private readonly Lazy<IDalamudTextureWrap> shadeTexture;
-
+    private readonly AddonLifecycleEventListener versionStringListener;
+    
     private readonly Dictionary<Guid, InOutCubic> shadeEasings = new();
     private readonly Dictionary<Guid, InOutQuint> moveEasings = new();
     private readonly Dictionary<Guid, InOutCubic> logoEasings = new();
@@ -50,6 +61,8 @@ internal class TitleScreenMenuWindow : Window, IDisposable
 
     private State state = State.Hide;
 
+    private int lastLoadedPluginCount = -1;
+    
     /// <summary>
     /// Initializes a new instance of the <see cref="TitleScreenMenuWindow"/> class.
     /// </summary>
@@ -61,6 +74,7 @@ internal class TitleScreenMenuWindow : Window, IDisposable
     /// <param name="titleScreenMenu">An instance of <see cref="TitleScreenMenu"/>.</param>
     /// <param name="gameGui">An instance of <see cref="GameGui"/>.</param>
     /// <param name="consoleManager">An instance of <see cref="ConsoleManager"/>.</param>
+    /// <param name="addonLifecycle">An instance of <see cref="AddonLifecycle"/>.</param>
     public TitleScreenMenuWindow(
         ClientState clientState,
         DalamudConfiguration configuration,
@@ -69,7 +83,8 @@ internal class TitleScreenMenuWindow : Window, IDisposable
         Framework framework,
         GameGui gameGui,
         TitleScreenMenu titleScreenMenu,
-        ConsoleManager consoleManager)
+        ConsoleManager consoleManager,
+        AddonLifecycle addonLifecycle)
         : base(
             "TitleScreenMenuOverlay",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoScrollbar |
@@ -109,6 +124,10 @@ internal class TitleScreenMenuWindow : Window, IDisposable
 
         framework.Update += this.FrameworkOnUpdate;
         this.scopedFinalizer.Add(() => framework.Update -= this.FrameworkOnUpdate);
+        
+        this.versionStringListener = new AddonLifecycleEventListener(AddonEvent.PreDraw, "_TitleRevision", this.OnVersionStringDraw);
+        addonLifecycle.RegisterListener(this.versionStringListener);
+        this.scopedFinalizer.Add(() => addonLifecycle.UnregisterListener(this.versionStringListener));
     }
 
     private enum State
@@ -412,6 +431,50 @@ internal class TitleScreenMenuWindow : Window, IDisposable
         var titleDcWorldMap = this.gameGui.GetAddonByName("TitleDCWorldMap", 1);
         if (charaMake != IntPtr.Zero || charaSelect != IntPtr.Zero || titleDcWorldMap != IntPtr.Zero)
             this.IsOpen = false;
+    }
+
+    private unsafe void OnVersionStringDraw(AddonEvent ev, AddonArgs args)
+    {
+        if (args is not AddonDrawArgs drawArgs) return;
+
+        var addon = (AtkUnitBase*)drawArgs.Addon;
+        var textNode = addon->GetTextNodeById(3);
+        
+        // look and feel init. should be harmless to set.
+        textNode->TextFlags |= (byte)TextFlags.MultiLine;
+        textNode->AlignmentType = AlignmentType.TopLeft;
+
+        var containsDalamudVersionString = textNode->OriginalTextPointer == textNode->NodeText.StringPtr;
+        if (!this.configuration.ShowTsm || !this.showTsm.Value)
+        {
+            if (containsDalamudVersionString)
+                textNode->SetText(addon->AtkValues[1].String);
+            this.lastLoadedPluginCount = -1;
+            return;
+        }
+
+        var pm = Service<PluginManager>.GetNullable();
+        var count = pm?.LoadedPluginCount ?? 0;
+
+        // Avoid rebuilding the string every frame.
+        if (containsDalamudVersionString && count == this.lastLoadedPluginCount)
+            return;
+        this.lastLoadedPluginCount = count;
+
+        var lssb = LSeStringBuilder.SharedPool.Get();
+        lssb.Append(new ReadOnlySeStringSpan(addon->AtkValues[1].String)).Append("\n\n");
+        lssb.PushEdgeColorType(701).PushColorType(539)
+            .Append(SeIconChar.BoxedLetterD.ToIconChar())
+            .PopColorType().PopEdgeColorType();
+        lssb.Append($" Dalamud: {Util.GetScmVersion()}");
+
+        lssb.Append($" - {count} {(count != 1 ? "plugins" : "plugin")} loaded");
+
+        if (pm?.SafeMode is true)
+            lssb.PushColorType(17).Append(" [SAFE MODE]").PopColorType();
+
+        textNode->SetText(lssb.GetViewAsSpan());
+        LSeStringBuilder.SharedPool.Return(lssb);
     }
 
     private void TitleScreenMenuEntryListChange() => this.privateAtlas.BuildFontsAsync();

@@ -21,6 +21,7 @@ internal class DataWindow : Window, IDisposable
     private readonly IDataWindowWidget[] modules =
     {
         new AddonInspectorWidget(),
+        new AddonInspectorWidget2(),
         new AddonLifecycleWidget(),
         new AddonWidget(),
         new AddressesWidget(),
@@ -42,6 +43,7 @@ internal class DataWindow : Window, IDisposable
         new HookWidget(),
         new IconBrowserWidget(),
         new ImGuiWidget(),
+        new InventoryWidget(),
         new KeyStateWidget(),
         new MarketBoardWidget(),
         new NetworkMonitorWidget(),
