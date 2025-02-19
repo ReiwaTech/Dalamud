@@ -102,7 +102,6 @@ internal sealed class DataManager : IInternalDisposableService, IDataManager
                 }
             });
             this.luminaResourceThread.Start();
-            CNServerPatch.ChangeWorldForCN(this.GameData);
         }
         catch (Exception ex)
         {
