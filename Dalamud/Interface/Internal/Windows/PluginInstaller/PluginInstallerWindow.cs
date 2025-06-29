@@ -223,10 +223,11 @@ internal class PluginInstallerWindow : Window, IDisposable
         IsThirdParty = 1 << 0,
         HasTrouble = 1 << 1,
         UpdateAvailable = 1 << 2,
-        IsNew = 1 << 3,
-        IsInstallableOutdated = 1 << 4,
-        IsOrphan = 1 << 5,
-        IsTesting = 1 << 6,
+        MainRepoCrossUpdate = 1 << 3,
+        IsNew = 1 << 4,
+        IsInstallableOutdated = 1 << 5,
+        IsOrphan = 1 << 6,
+        IsTesting = 1 << 7,
     }
 
     private enum InstalledPluginListFilter
@@ -282,6 +283,7 @@ internal class PluginInstallerWindow : Window, IDisposable
         var pluginManager = Service<PluginManager>.Get();
 
         _ = pluginManager.ReloadPluginMastersAsync();
+        Service<PluginManager>.Get().ScanDevPlugins();
 
         if (!this.isSearchTextPrefilled) this.searchText = string.Empty;
         this.sortKind = PluginSortKind.Alphabetical;
@@ -754,8 +756,9 @@ internal class PluginInstallerWindow : Window, IDisposable
             Service<DalamudInterface>.Get().OpenSettings();
         }
 
-        // If any dev plugins are installed, allow a shortcut for the /xldev menu item
-        if (this.hasDevPlugins)
+        // If any dev plugin locations exist, allow a shortcut for the /xldev menu item
+        var hasDevPluginLocations = configuration.DevPluginLoadLocations.Count > 0;
+        if (hasDevPluginLocations)
         {
             ImGui.SameLine();
             if (ImGui.Button(Locs.FooterButton_ScanDevPlugins))
@@ -2217,7 +2220,12 @@ internal class PluginInstallerWindow : Window, IDisposable
         else if (plugin is { IsDecommissioned: true, IsThirdParty: true })
         {
             ImGui.PushStyleColor(ImGuiCol.Text, ImGuiColors.DalamudRed);
-            ImGui.TextWrapped(Locs.PluginBody_NoServiceThird);
+
+            ImGui.TextWrapped(
+                flags.HasFlag(PluginHeaderFlags.MainRepoCrossUpdate)
+                    ? Locs.PluginBody_NoServiceThirdCrossUpdate
+                    : Locs.PluginBody_NoServiceThird);
+
             ImGui.PopStyleColor();
         }
         else if (plugin != null && !plugin.CheckPolicy())
@@ -2602,7 +2610,10 @@ internal class PluginInstallerWindow : Window, IDisposable
             availablePluginUpdate = null;
 
         // Update available
-        if (availablePluginUpdate != default)
+        var isMainRepoCrossUpdate = availablePluginUpdate != null &&
+                                    availablePluginUpdate.UpdateManifest.RepoUrl != plugin.Manifest.RepoUrl &&
+                                    availablePluginUpdate.UpdateManifest.RepoUrl == PluginRepository.MainRepoUrl;
+        if (availablePluginUpdate != null)
         {
             label += Locs.PluginTitleMod_HasUpdate;
         }
@@ -2612,7 +2623,7 @@ internal class PluginInstallerWindow : Window, IDisposable
         if (this.updatedPlugins != null && !plugin.IsDev)
         {
             var update = this.updatedPlugins.FirstOrDefault(update => update.InternalName == plugin.Manifest.InternalName);
-            if (update != default)
+            if (update != null)
             {
                 if (update.Status == PluginUpdateStatus.StatusKind.Success)
                 {
@@ -2640,8 +2651,8 @@ internal class PluginInstallerWindow : Window, IDisposable
             trouble = true;
         }
 
-        // Orphaned
-        if (plugin.IsOrphaned)
+        // Orphaned, if we don't have a cross-repo update
+        if (plugin.IsOrphaned && !isMainRepoCrossUpdate)
         {
             label += Locs.PluginTitleMod_OrphanedError;
             trouble = true;
@@ -2670,7 +2681,7 @@ internal class PluginInstallerWindow : Window, IDisposable
         string? availableChangelog = null;
         var didDrawAvailableChangelogInsideCollapsible = false;
 
-        if (availablePluginUpdate != default)
+        if (availablePluginUpdate != null)
         {
             availablePluginUpdateVersion =
                 availablePluginUpdate.UseTesting ?
@@ -2688,8 +2699,10 @@ internal class PluginInstallerWindow : Window, IDisposable
             flags |= PluginHeaderFlags.IsThirdParty;
         if (trouble)
             flags |= PluginHeaderFlags.HasTrouble;
-        if (availablePluginUpdate != default)
+        if (availablePluginUpdate != null)
             flags |= PluginHeaderFlags.UpdateAvailable;
+        if (isMainRepoCrossUpdate)
+            flags |= PluginHeaderFlags.MainRepoCrossUpdate;
         if (plugin.IsOrphaned)
             flags |= PluginHeaderFlags.IsOrphan;
         if (plugin.IsTesting)
@@ -4055,6 +4068,8 @@ internal class PluginInstallerWindow : Window, IDisposable
         public static string PluginBody_NoServiceOfficial => Loc.Localize("InstallerNoServiceOfficialPluginBody", "This plugin is no longer being maintained. It will still work, but there will be no further updates and you can't reinstall it.");
 
         public static string PluginBody_NoServiceThird => Loc.Localize("InstallerNoServiceThirdPluginBody", "This plugin is no longer being serviced by its source repo. You may have to look for an updated version in another repo.");
+
+        public static string PluginBody_NoServiceThirdCrossUpdate => Loc.Localize("InstallerNoServiceThirdCrossUpdatePluginBody", "This plugin is no longer being serviced by its source repo. An update is available and will update it to a version from the official repository.");
 
         public static string PluginBody_LoadFailed => Loc.Localize("InstallerLoadFailedPluginBody ", "This plugin failed to load. Please contact the author for more information.");
 
