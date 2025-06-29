@@ -70,10 +70,17 @@ public static class Util
     private static ulong moduleEndAddr;
 
     /// <summary>
-    /// Gets the assembly version of Dalamud.
+    /// Gets the Dalamud version.
     /// </summary>
+    [Api13ToDo("Remove. Make both versions here internal. Add an API somewhere.")]
     public static string AssemblyVersion { get; } =
-        Assembly.GetAssembly(typeof(ChatHandlers)).GetName().Version.ToString();
+        Assembly.GetAssembly(typeof(ChatHandlers))!.GetName().Version!.ToString();
+
+    /// <summary>
+    /// Gets the Dalamud version.
+    /// </summary>
+    internal static Version AssemblyVersionParsed { get; } =
+        Assembly.GetAssembly(typeof(ChatHandlers))!.GetName().Version!;
 
     /// <summary>
     /// Gets the SCM Version from the assembly, or null if it cannot be found. This method will generally return
@@ -308,7 +315,7 @@ public static class Util
     /// </summary>
     /// <param name="obj">The structure to show.</param>
     /// <param name="addr">The address to the structure.</param>
-    /// <param name="autoExpand">Whether or not this structure should start out expanded.</param>
+    /// <param name="autoExpand">Whether this structure should start out expanded.</param>
     /// <param name="path">The already followed path.</param>
     public static void ShowStruct(object obj, ulong addr, bool autoExpand = false, IEnumerable<string>? path = null)
         => ShowStructInternal(obj, addr, autoExpand, path);
@@ -318,7 +325,7 @@ public static class Util
     /// </summary>
     /// <typeparam name="T">The type of the structure.</typeparam>
     /// <param name="obj">The pointer to the structure.</param>
-    /// <param name="autoExpand">Whether or not this structure should start out expanded.</param>
+    /// <param name="autoExpand">Whether this structure should start out expanded.</param>
     public static unsafe void ShowStruct<T>(T* obj, bool autoExpand = false) where T : unmanaged
     {
         ShowStruct(*obj, (ulong)&obj, autoExpand);
@@ -328,7 +335,7 @@ public static class Util
     /// Show a GameObject's internal data in an ImGui-context.
     /// </summary>
     /// <param name="go">The GameObject to show.</param>
-    /// <param name="autoExpand">Whether or not the struct should start as expanded.</param>
+    /// <param name="autoExpand">Whether the struct should start as expanded.</param>
     public static unsafe void ShowGameObjectStruct(IGameObject go, bool autoExpand = true)
     {
         switch (go)
@@ -604,10 +611,9 @@ public static class Util
     /// </summary>
     /// <param name="path">The path of the file to write to.</param>
     /// <param name="text">The text to write.</param>
-    public static void WriteAllTextSafe(string path, string text)
-    {
-        WriteAllTextSafe(path, text, Encoding.UTF8);
-    }
+    [Api13ToDo("Remove.")]
+    [Obsolete("Replaced with FilesystemUtil.WriteAllTextSafe()")]
+    public static void WriteAllTextSafe(string path, string text) => FilesystemUtil.WriteAllTextSafe(path, text);
 
     /// <summary>
     /// Overwrite text in a file by first writing it to a temporary file, and then
@@ -616,10 +622,9 @@ public static class Util
     /// <param name="path">The path of the file to write to.</param>
     /// <param name="text">The text to write.</param>
     /// <param name="encoding">Encoding to use.</param>
-    public static void WriteAllTextSafe(string path, string text, Encoding encoding)
-    {
-        WriteAllBytesSafe(path, encoding.GetBytes(text));
-    }
+    [Api13ToDo("Remove.")]
+    [Obsolete("Replaced with FilesystemUtil.WriteAllTextSafe()")]
+    public static void WriteAllTextSafe(string path, string text, Encoding encoding) => FilesystemUtil.WriteAllTextSafe(path, text, encoding);
 
     /// <summary>
     /// Overwrite data in a file by first writing it to a temporary file, and then
@@ -627,41 +632,9 @@ public static class Util
     /// </summary>
     /// <param name="path">The path of the file to write to.</param>
     /// <param name="bytes">The data to write.</param>
-    public static unsafe void WriteAllBytesSafe(string path, byte[] bytes)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(path);
-
-        // Open the temp file
-        var tempPath = path + ".tmp";
-
-        using var tempFile = Windows.Win32.PInvoke.CreateFile(
-            tempPath,
-            (uint)(FILE_ACCESS_RIGHTS.FILE_GENERIC_READ | FILE_ACCESS_RIGHTS.FILE_GENERIC_WRITE),
-            FILE_SHARE_MODE.FILE_SHARE_NONE,
-            null,
-            FILE_CREATION_DISPOSITION.CREATE_ALWAYS,
-            FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_NORMAL,
-            null);
-
-        if (tempFile.IsInvalid)
-            throw new Win32Exception();
-
-        // Write the data
-        uint bytesWritten = 0;
-        if (!Windows.Win32.PInvoke.WriteFile(tempFile, new ReadOnlySpan<byte>(bytes), &bytesWritten, null))
-            throw new Win32Exception();
-
-        if (bytesWritten != bytes.Length)
-            throw new Exception($"Could not write all bytes to temp file ({bytesWritten} of {bytes.Length})");
-
-        if (!Windows.Win32.PInvoke.FlushFileBuffers(tempFile))
-            throw new Win32Exception();
-
-        tempFile.Close();
-
-        if (!Windows.Win32.PInvoke.MoveFileEx(tempPath, path, MOVE_FILE_FLAGS.MOVEFILE_REPLACE_EXISTING | MOVE_FILE_FLAGS.MOVEFILE_WRITE_THROUGH))
-            throw new Win32Exception();
-    }
+    [Api13ToDo("Remove.")]
+    [Obsolete("Replaced with FilesystemUtil.WriteAllBytesSafe()")]
+    public static void WriteAllBytesSafe(string path, byte[] bytes) => FilesystemUtil.WriteAllBytesSafe(path, bytes);
 
     /// <summary>Gets a temporary file name, for use as the sourceFileName in
     /// <see cref="File.Replace(string,string,string?)"/>.</summary>
@@ -669,7 +642,7 @@ public static class Util
     /// <returns>A temporary file name that should be usable with <see cref="File.Replace(string,string,string?)"/>.
     /// </returns>
     /// <remarks>No write operation is done on the filesystem.</remarks>
-    public static string GetTempFileNameForFileReplacement(string targetFile)
+    public static string GetReplaceableFileName(string targetFile)
     {
         Span<byte> buf = stackalloc byte[9];
         Random.Shared.NextBytes(buf);
@@ -1065,7 +1038,7 @@ public static class Util
     /// </summary>
     /// <param name="obj">The structure to show.</param>
     /// <param name="addr">The address to the structure.</param>
-    /// <param name="autoExpand">Whether or not this structure should start out expanded.</param>
+    /// <param name="autoExpand">Whether this structure should start out expanded.</param>
     /// <param name="path">The already followed path.</param>
     /// <param name="hideAddress">Do not print addresses. Use when displaying a copied value.</param>
     private static void ShowStructInternal(object obj, ulong addr, bool autoExpand = false, IEnumerable<string>? path = null, bool hideAddress = false)

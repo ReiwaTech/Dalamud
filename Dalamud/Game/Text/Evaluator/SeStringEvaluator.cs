@@ -24,6 +24,7 @@ using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Client.UI.Info;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using FFXIVClientStructs.FFXIV.Component.Text;
+using FFXIVClientStructs.Interop;
 
 using Lumina.Data.Structs.Excel;
 using Lumina.Excel;
@@ -49,6 +50,9 @@ namespace Dalamud.Game.Text.Evaluator;
 internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 {
     private static readonly ModuleLog Log = new("SeStringEvaluator");
+
+    [ServiceManager.ServiceDependency]
+    private readonly ClientState.ClientState clientState = Service<ClientState.ClientState>.Get();
 
     [ServiceManager.ServiceDependency]
     private readonly DataManager dataManager = Service<DataManager>.Get();
@@ -91,7 +95,7 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
         if (str.IsTextOnly())
             return new(str);
 
-        var lang = language ?? this.dalamudConfiguration.EffectiveLanguage.ToClientLanguage();
+        var lang = language ?? this.GetEffectiveClientLanguage();
 
         // TODO: remove culture info toggling after supporting CultureInfo for SeStringBuilder.Append,
         //       and then remove try...finally block (discard builder from the pool on exception)
@@ -115,7 +119,7 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
         Span<SeStringParameter> localParameters = default,
         ClientLanguage? language = null)
     {
-        var lang = language ?? this.dalamudConfiguration.EffectiveLanguage.ToClientLanguage();
+        var lang = language ?? this.GetEffectiveClientLanguage();
 
         if (!this.dataManager.GetExcelSheet<AddonSheet>(lang).TryGetRow(addonId, out var addonRow))
             return default;
@@ -129,7 +133,7 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
         Span<SeStringParameter> localParameters = default,
         ClientLanguage? language = null)
     {
-        var lang = language ?? this.dalamudConfiguration.EffectiveLanguage.ToClientLanguage();
+        var lang = language ?? this.GetEffectiveClientLanguage();
 
         if (!this.dataManager.GetExcelSheet<Lobby>(lang).TryGetRow(lobbyId, out var lobbyRow))
             return default;
@@ -143,7 +147,7 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
         Span<SeStringParameter> localParameters = default,
         ClientLanguage? language = null)
     {
-        var lang = language ?? this.dalamudConfiguration.EffectiveLanguage.ToClientLanguage();
+        var lang = language ?? this.GetEffectiveClientLanguage();
 
         if (!this.dataManager.GetExcelSheet<LogMessage>(lang).TryGetRow(logMessageId, out var logMessageRow))
             return default;
@@ -154,7 +158,7 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
     /// <inheritdoc/>
     public string EvaluateActStr(ActionKind actionKind, uint id, ClientLanguage? language = null) =>
         this.actStrCache.GetOrAdd(
-            new(actionKind, id, language ?? this.dalamudConfiguration.EffectiveLanguage.ToClientLanguage()),
+            new(actionKind, id, language ?? this.GetEffectiveClientLanguage()),
             static (key, t) => t.EvaluateFromAddon(2026, [key.Kind.GetActStrId(key.Id)], key.Language)
                                 .ExtractText()
                                 .StripSoftHyphen(),
@@ -163,7 +167,7 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
     /// <inheritdoc/>
     public string EvaluateObjStr(ObjectKind objectKind, uint id, ClientLanguage? language = null) =>
         this.objStrCache.GetOrAdd(
-            new(objectKind, id, language ?? this.dalamudConfiguration.EffectiveLanguage.ToClientLanguage()),
+            new(objectKind, id, language ?? this.GetEffectiveClientLanguage()),
             static (key, t) => t.EvaluateFromAddon(2025, [key.Kind.GetObjStrId(key.Id)], key.Language)
                                 .ExtractText()
                                 .StripSoftHyphen(),
@@ -181,6 +185,18 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
     private static uint ConvertRawToMapPosY(Lumina.Excel.Sheets.Map map, float y)
         => ConvertRawToMapPos(map, map.OffsetY, y);
+
+    private ClientLanguage GetEffectiveClientLanguage()
+    {
+        return this.dalamudConfiguration.EffectiveLanguage switch
+        {
+            "ja" => ClientLanguage.Japanese,
+            "en" => ClientLanguage.English,
+            "de" => ClientLanguage.German,
+            "fr" => ClientLanguage.French,
+            _ => this.clientState.ClientLanguage,
+        };
+    }
 
     private SeStringBuilder EvaluateAndAppendTo(
         SeStringBuilder builder,
@@ -445,7 +461,7 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
                 if (this.gameConfig.UiConfig.TryGetUInt("LogCrossWorldName", out var logCrossWorldName) &&
                     logCrossWorldName == 1)
-                    context.Builder.Append((ReadOnlySeStringSpan)world.Name);
+                    context.Builder.Append(new ReadOnlySeStringSpan(world.Name.GetPointer(0)));
             }
 
             return true;
@@ -635,7 +651,7 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
             {
                 case false when digit == 0:
                     continue;
-                case true when i % 3 == 0:
+                case true when MathF.Log10(i) % 3 == 2:
                     this.ResolveStringExpression(in context, eSep);
                     break;
             }
@@ -938,9 +954,7 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
                 if (p.Type == ReadOnlySePayloadType.Text)
                 {
-                    context.Builder.Append(
-                        context.CultureInfo.TextInfo.ToTitleCase(Encoding.UTF8.GetString(p.Body.Span)));
-
+                    context.Builder.Append(Encoding.UTF8.GetString(p.Body.Span).ToUpper(true, true, false, context.Language));
                     continue;
                 }
 
@@ -1067,8 +1081,8 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
         if (!enu.MoveNext() || !this.TryResolveUInt(in context, enu.Current, out var placeNameIdInt))
             return false;
 
-        var instance = packedIds >> 0x10;
-        var mapId = packedIds & 0xFF;
+        var instance = packedIds >> 16;
+        var mapId = packedIds & 0xFFFF;
 
         if (this.dataManager.GetExcelSheet<TerritoryType>(context.Language)
                 .TryGetRow(territoryTypeId, out var territoryTypeRow))
@@ -1356,8 +1370,6 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
         var group = (uint)(e0Val + 1);
         var rowId = (uint)e1Val;
 
-        using var icons = new SeStringBuilderIconWrap(context.Builder, 54, 55);
-
         if (!this.dataManager.GetExcelSheet<Completion>(context.Language).TryGetFirst(
                 row => row.Group == group && !row.LookupTable.IsEmpty,
                 out var groupRow))
@@ -1381,6 +1393,8 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
             return true;
         }
+
+        using var icons = new SeStringBuilderIconWrap(context.Builder, 54, 55);
 
         // CategoryDataCache
         if (lookupTable.Equals("#"))
