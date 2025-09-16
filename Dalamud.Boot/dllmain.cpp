@@ -1,6 +1,10 @@
 #include "pch.h"
 
+#include <d3d11.h>
+#include <dxgi1_3.h>
+
 #include "DalamudStartInfo.h"
+#include "hooks.h"
 #include "logging.h"
 #include "utils.h"
 #include "veh.h"
@@ -8,6 +12,85 @@
 
 HMODULE g_hModule;
 HINSTANCE g_hGameInstance = GetModuleHandleW(nullptr);
+
+void CheckMsvcrtVersion() {
+    // Commit introducing inline mutex ctor: tagged vs-2022-17.14 (2024-06-18)
+    // - https://github.com/microsoft/STL/commit/22a88260db4d754bbc067e2002430144d6ec5391
+    // MSVC Redist versions:
+    // - https://github.com/abbodi1406/vcredist/blob/master/source_links/README.md
+    // - 14.40.33810.0 dsig 2024-04-28
+    // - 14.40.33816.0 dsig 2024-09-11
+
+    constexpr WORD RequiredMsvcrtVersionComponents[] = {14, 40, 33816, 0};
+    constexpr auto RequiredMsvcrtVersion = 0ULL
+        | (static_cast<uint64_t>(RequiredMsvcrtVersionComponents[0]) << 48)
+        | (static_cast<uint64_t>(RequiredMsvcrtVersionComponents[1]) << 32)
+        | (static_cast<uint64_t>(RequiredMsvcrtVersionComponents[2]) << 16)
+        | (static_cast<uint64_t>(RequiredMsvcrtVersionComponents[3]) << 0);
+
+#ifdef _DEBUG
+    constexpr const wchar_t* RuntimeDllNames[] = {
+        L"msvcp140d.dll",
+        L"vcruntime140d.dll",
+        L"vcruntime140_1d.dll",
+    };
+#else
+    constexpr const wchar_t* RuntimeDllNames[] = {
+        L"msvcp140.dll",
+        L"vcruntime140.dll",
+        L"vcruntime140_1.dll",
+    };
+#endif
+
+    uint64_t lowestVersion = 0;
+    for (const auto& runtimeDllName : RuntimeDllNames) {
+        const utils::loaded_module mod(GetModuleHandleW(runtimeDllName));
+        if (!mod) {
+            logging::E("Runtime DLL not found: {}", runtimeDllName);
+            continue;
+        }
+
+        try {
+            const auto& versionFull = mod.get_file_version();
+            logging::I("Runtime DLL {} has version {}.", runtimeDllName, utils::format_file_version(versionFull));
+
+            const auto version = (static_cast<uint64_t>(versionFull.dwFileVersionMS) << 32) |
+                static_cast<uint64_t>(versionFull.dwFileVersionLS);
+
+            if (version < RequiredMsvcrtVersion && (lowestVersion == 0 || lowestVersion > version))
+                lowestVersion = version;
+        } catch (const std::exception& e) {
+            logging::E("Failed to detect Runtime DLL version for {}: {}", runtimeDllName, e.what());
+        }
+    }
+
+    if (lowestVersion) {
+        switch (MessageBoxW(
+            nullptr,
+            L"Microsoft Visual C++ Redistributable should be updated, or Dalamud may not work as expected."
+            L" Do you want to download and install the latest version from Microsoft?"
+            L"\n"
+            L"\n* Clicking \"Yes\" will exit the game and open the download page from Microsoft."
+            L"\n* Clicking \"No\" will continue loading the game with Dalamud. This may fail."
+            L"\n"
+            L"\nClick \"X64\" from the table in the download page, regardless of what CPU you have.",
+            L"Dalamud",
+            MB_YESNO | MB_ICONWARNING)) {
+            case IDYES:
+                ShellExecuteW(
+                    nullptr,
+                    L"open",
+                    L"https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170#latest-microsoft-visual-c-redistributable-version",
+                    nullptr,
+                    nullptr,
+                    SW_SHOW);
+                ExitProcess(0);
+                break;
+            case IDNO:
+                break;
+        }
+    }
+}
 
 HRESULT WINAPI InitializeImpl(LPVOID lpParam, HANDLE hMainThreadContinue) {
     g_startInfo.from_envvars();
@@ -89,6 +172,71 @@ HRESULT WINAPI InitializeImpl(LPVOID lpParam, HANDLE hMainThreadContinue) {
 
     if ((g_startInfo.BootWaitMessageBox & DalamudStartInfo::WaitMessageboxFlags::BeforeInitialize) != DalamudStartInfo::WaitMessageboxFlags::None)
         MessageBoxW(nullptr, L"Press OK to continue (BeforeInitialize)", L"Dalamud Boot", MB_OK);
+
+    CheckMsvcrtVersion();
+
+    if (g_startInfo.BootDebugDirectX) {
+        logging::I("Enabling DirectX Debugging.");
+
+        const auto hD3D11 = GetModuleHandleW(L"d3d11.dll");
+        const auto hDXGI = GetModuleHandleW(L"dxgi.dll");
+        const auto pfnD3D11CreateDevice = static_cast<decltype(&D3D11CreateDevice)>(
+            hD3D11 ? static_cast<void*>(GetProcAddress(hD3D11, "D3D11CreateDevice")) : nullptr);
+        if (pfnD3D11CreateDevice) {
+            static hooks::direct_hook<decltype(D3D11CreateDevice)> s_hookD3D11CreateDevice(
+                "d3d11.dll!D3D11CreateDevice",
+                pfnD3D11CreateDevice);
+            s_hookD3D11CreateDevice.set_detour([](
+                IDXGIAdapter* pAdapter,
+                D3D_DRIVER_TYPE DriverType,
+                HMODULE Software,
+                UINT Flags,
+                const D3D_FEATURE_LEVEL* pFeatureLevels,
+                UINT FeatureLevels,
+                UINT SDKVersion,
+                ID3D11Device** ppDevice,
+                D3D_FEATURE_LEVEL* pFeatureLevel,
+                ID3D11DeviceContext** ppImmediateContext
+            ) -> HRESULT {
+                return s_hookD3D11CreateDevice.call_original(
+                    pAdapter,
+                    DriverType,
+                    Software,
+                    (Flags & ~D3D11_CREATE_DEVICE_PREVENT_ALTERING_LAYER_SETTINGS_FROM_REGISTRY) | D3D11_CREATE_DEVICE_DEBUG,
+                    pFeatureLevels,
+                    FeatureLevels,
+                    SDKVersion,
+                    ppDevice,
+                    pFeatureLevel,
+                    ppImmediateContext);
+            });
+        } else {
+            logging::W("Could not find d3d11!D3D11CreateDevice.");
+        }
+
+        const auto pfnCreateDXGIFactory = static_cast<decltype(&CreateDXGIFactory)>(
+            hDXGI ? static_cast<void*>(GetProcAddress(hDXGI, "CreateDXGIFactory")) : nullptr);
+        const auto pfnCreateDXGIFactory1 = static_cast<decltype(&CreateDXGIFactory1)>(
+            hDXGI ? static_cast<void*>(GetProcAddress(hDXGI, "CreateDXGIFactory1")) : nullptr);
+        static const auto pfnCreateDXGIFactory2 = static_cast<decltype(&CreateDXGIFactory2)>(
+            hDXGI ? static_cast<void*>(GetProcAddress(hDXGI, "CreateDXGIFactory2")) : nullptr);
+        if (pfnCreateDXGIFactory2) {
+            static hooks::direct_hook<decltype(CreateDXGIFactory)> s_hookCreateDXGIFactory(
+                "dxgi.dll!CreateDXGIFactory",
+                pfnCreateDXGIFactory);
+            static hooks::direct_hook<decltype(CreateDXGIFactory1)> s_hookCreateDXGIFactory1(
+                "dxgi.dll!CreateDXGIFactory1",
+                pfnCreateDXGIFactory1);
+            s_hookCreateDXGIFactory.set_detour([](REFIID riid, _COM_Outptr_ void **ppFactory) -> HRESULT {
+                return pfnCreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, riid, ppFactory);
+            });
+            s_hookCreateDXGIFactory1.set_detour([](REFIID riid, _COM_Outptr_ void **ppFactory) -> HRESULT {
+                return pfnCreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, riid, ppFactory);
+            });
+        } else {
+            logging::W("Could not find dxgi!CreateDXGIFactory2.");
+        }
+    }
 
     if (minHookLoaded) {
         logging::I("Applying fixes...");
