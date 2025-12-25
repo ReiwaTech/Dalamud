@@ -20,8 +20,8 @@ jobs:
           submodules: recursive
           fetch-depth: 0
       - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v1.0.2
-      - uses: actions/setup-dotnet@v3
+        uses: microsoft/setup-msbuild@v2
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.100'
       - name: Define VERSION
@@ -38,7 +38,7 @@ jobs:
       - name: Create hashlist
         run: .\CreateHashList.ps1 .\bin\Release
       - name: Attest Build
-        if: ${{ github.repository_owner == 'goatcorp' && github.event_name == 'push' }}
+        if: ${{ github.repository_owner == 'ReiwaTech' && github.event_name == 'push' }}
         uses: actions/attest-build-provenance@v1
         with:
           subject-path: |
