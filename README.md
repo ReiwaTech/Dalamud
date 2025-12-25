@@ -14,15 +14,6 @@ This repository and all the upstreams are licensed under [AGPL](LICENSE).
 There is no guarantee or support for this fork. It may not work with any version of XIVLauncher or any plugin designed for upstreams.
 Using it (and upstreams / all other Dalamud forks) **is not advised and at your own risk**, as it's not in-line with Square Enix (and any operator) ToS.
 
-## Branches
-
-We are currently working from the following branches.
-
-| Name    | API Level | Purpose                                                    | .NET Version               | Track             |
-| ------- | --------- | ---------------------------------------------------------- | -------------------------- | ----------------- |
-| _cn_    | **8**     | Current release branch                                     | .NET 7.0.0 (November 2022) | Release & Staging |
-| _cn-v9_ | **9**     | Next major version, slated for release alongside Patch 6.5 | .NET 7.0.0 (November 2022) | v9                |
-
 <br>
 
 ##### Final Fantasy XIV © 2010-2021 SQUARE ENIX CO., LTD. All Rights Reserved. We are not affiliated with SQUARE ENIX CO., LTD. in any way.
