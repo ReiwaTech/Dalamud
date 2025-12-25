@@ -147,7 +147,7 @@ internal sealed class DevPluginsSettingsEntry : SettingsEntry
                 else
                 {
                     devPluginLocationSetting.Path = path;
-                    this.devPluginLocationsChanged = path != devPluginLocationSetting.Path;
+                    this.devPluginLocationsChanged = true;
                 }
             }
 

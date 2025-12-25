@@ -182,13 +182,13 @@ internal class LocalPlugin : IAsyncDisposable
     /// <summary>
     /// Gets a value indicating whether this plugin is orphaned(belongs to a repo) or not.
     /// </summary>
-    public bool IsOrphaned => !this.IsDev &&
+    public bool IsOrphaned => false && !this.IsDev &&
                               this.GetSourceRepository() == null;
 
     /// <summary>
     /// Gets a value indicating whether this plugin is serviced(repo still exists, but plugin no longer does).
     /// </summary>
-    public bool IsDecommissioned => !this.IsDev &&
+    public bool IsDecommissioned => false && !this.IsDev &&
                                     this.GetSourceRepository()?.State == PluginRepositoryState.Success &&
                                     this.GetSourceRepository()?.PluginMaster?.FirstOrDefault(x => x.InternalName == this.manifest.InternalName) == null;
 

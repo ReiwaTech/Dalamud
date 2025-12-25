@@ -76,8 +76,8 @@ internal class ThirdRepoSettingsEntry : SettingsEntry
         ImGuiHelpers.ScaledDummy(2);
 
         config.ThirdRepoSpeedbumpDismissed ??= config.ThirdRepoList.Any(x => x.IsEnabled);
-        var disclaimerDismissed = config.ThirdRepoSpeedbumpDismissed.Value;
-
+        var disclaimerDismissed = true || config.ThirdRepoSpeedbumpDismissed.Value;
+        
         ImGui.PushFont(InterfaceManager.IconFont);
         ImGui.PushStyleColor(ImGuiCol.Text, ImGuiColors.DalamudOrange);
         ImGui.TextWrapped(FontAwesomeIcon.ExclamationTriangle.ToIconString());
@@ -147,6 +147,7 @@ internal class ThirdRepoSettingsEntry : SettingsEntry
 
         ImGui.Separator();
 
+        /*
         ImGui.Text("0"u8);
         ImGui.NextColumn();
         ImGui.Text("XIVLauncher"u8);
@@ -154,6 +155,7 @@ internal class ThirdRepoSettingsEntry : SettingsEntry
         ImGui.NextColumn();
         ImGui.NextColumn();
         ImGui.Separator();
+        */
 
         ThirdPartyRepoSettings repoToRemove = null;
 
@@ -190,7 +192,7 @@ internal class ThirdRepoSettingsEntry : SettingsEntry
                 else
                 {
                     thirdRepoSetting.Url = url;
-                    this.thirdRepoListChanged = url != thirdRepoSetting.Url;
+                    this.thirdRepoListChanged = true;
                 }
             }
 

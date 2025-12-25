@@ -28,7 +28,7 @@ void ConsoleTeardown()
 
 std::optional<CoreCLR> g_clr;
 
-static wchar_t* GetRuntimePath()
+static wchar_t* GetRuntimePath(std::wstring module_path)
 {
     int result;
     std::wstring buffer;
@@ -48,6 +48,7 @@ static wchar_t* GetRuntimePath()
     }
 
     // Detect Windows first
+    /*
     result = SHGetKnownFolderPath(FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, nullptr, &_appdata);
 
     if (result != 0)
@@ -55,9 +56,10 @@ static wchar_t* GetRuntimePath()
         logging::E("Unable to get RoamingAppData path (err={})", result);
         return NULL;
     }
+    */
 
-    std::filesystem::path fs_app_data(_appdata);
-    runtime_path = _wcsdup(fs_app_data.append("XIVLauncher").append("runtime").c_str());
+    std::filesystem::path fs_app_data(module_path);
+    runtime_path = _wcsdup(fs_app_data.parent_path().parent_path().append("runtime").c_str());
     if (std::filesystem::exists(runtime_path))
         return runtime_path;
     free(runtime_path);
@@ -114,7 +116,7 @@ HRESULT InitializeClrAndGetEntryPoint(
 
     SetEnvironmentVariable(L"COMPlus_ETWEnabled", enable_etw ? L"1" : L"0");
 
-    wchar_t* dotnet_path = GetRuntimePath();
+    wchar_t* dotnet_path = GetRuntimePath(module_path);
 
     if (!dotnet_path || !std::filesystem::exists(dotnet_path))
     {

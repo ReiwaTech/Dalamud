@@ -88,6 +88,9 @@ public struct GameFontStyle
         GameFontFamilyAndSize.Axis14 => GameFontFamily.Axis,
         GameFontFamilyAndSize.Axis18 => GameFontFamily.Axis,
         GameFontFamilyAndSize.Axis36 => GameFontFamily.Axis,
+        GameFontFamilyAndSize.ChnAxis120 => GameFontFamily.Axis,
+        GameFontFamilyAndSize.ChnAxis140 => GameFontFamily.Axis,
+        GameFontFamilyAndSize.ChnAxis180 => GameFontFamily.Axis,
         GameFontFamilyAndSize.Jupiter16 => GameFontFamily.Jupiter,
         GameFontFamilyAndSize.Jupiter20 => GameFontFamily.Jupiter,
         GameFontFamilyAndSize.Jupiter23 => GameFontFamily.Jupiter,
@@ -114,7 +117,7 @@ public struct GameFontStyle
     /// </summary>
     public readonly GameFontFamilyAndSize FamilyWithMinimumSize => this.Family switch
     {
-        GameFontFamily.Axis => GameFontFamilyAndSize.Axis96,
+        GameFontFamily.Axis => GameFontFamilyAndSize.ChnAxis120,
         GameFontFamily.Jupiter => GameFontFamilyAndSize.Jupiter16,
         GameFontFamily.JupiterNumeric => GameFontFamilyAndSize.Jupiter45,
         GameFontFamily.Meidinger => GameFontFamilyAndSize.Meidinger16,
@@ -134,6 +137,9 @@ public struct GameFontStyle
         GameFontFamilyAndSize.Axis14 => 14,
         GameFontFamilyAndSize.Axis18 => 18,
         GameFontFamilyAndSize.Axis36 => 36,
+        GameFontFamilyAndSize.ChnAxis120 => 12,
+        GameFontFamilyAndSize.ChnAxis140 => 14,
+        GameFontFamilyAndSize.ChnAxis180 => 18,
         GameFontFamilyAndSize.Jupiter16 => 16,
         GameFontFamilyAndSize.Jupiter20 => 20,
         GameFontFamilyAndSize.Jupiter23 => 23,
@@ -191,10 +197,10 @@ public struct GameFontStyle
             GameFontFamily.Undefined => GameFontFamilyAndSize.Undefined,
             GameFontFamily.Axis => size switch
             {
-                <= ((int)((9.6f * 4f / 3f) + 0.5f) * 3f / 4f) + 0.001f => GameFontFamilyAndSize.Axis96,
-                <= ((int)((12f * 4f / 3f) + 0.5f) * 3f / 4f) + 0.001f => GameFontFamilyAndSize.Axis12,
-                <= ((int)((14f * 4f / 3f) + 0.5f) * 3f / 4f) + 0.001f => GameFontFamilyAndSize.Axis14,
-                <= ((int)((18f * 4f / 3f) + 0.5f) * 3f / 4f) + 0.001f => GameFontFamilyAndSize.Axis18,
+                <= ((int)((9.6f * 4f / 3f) + 0.5f) * 3f / 4f) + 0.001f => GameFontFamilyAndSize.ChnAxis120,
+                <= ((int)((12f * 4f / 3f) + 0.5f) * 3f / 4f) + 0.001f => GameFontFamilyAndSize.ChnAxis120,
+                <= ((int)((14f * 4f / 3f) + 0.5f) * 3f / 4f) + 0.001f => GameFontFamilyAndSize.ChnAxis140,
+                <= ((int)((18f * 4f / 3f) + 0.5f) * 3f / 4f) + 0.001f => GameFontFamilyAndSize.ChnAxis180,
                 _ => GameFontFamilyAndSize.Axis36,
             },
             GameFontFamily.Jupiter => size switch

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -298,6 +299,7 @@ namespace Dalamud.Injector
             var languageStr = startInfo.Language.ToString().ToLowerInvariant();
             var platformStr = startInfo.Platform.ToString().ToLowerInvariant();
             var unhandledExceptionStr = startInfo.UnhandledException.ToString().ToLowerInvariant();
+            languageStr = "chinese";
             var troubleshootingData = "{\"empty\": true, \"description\": \"No troubleshooting data supplied.\"}";
 
             // env vars are brought in prior to launch args, since args can override them.
@@ -363,8 +365,8 @@ namespace Dalamud.Injector
                 i--;
             }
 
-            var appDataDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            var xivlauncherDir = Path.Combine(appDataDir, "XIVLauncher");
+            var launcherDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            var xivlauncherDir = Path.Combine(Path.GetDirectoryName(launcherDir), "XIVLauncher");
 
             workingDirectory ??= Directory.GetCurrentDirectory();
             configurationPath ??= Path.Combine(xivlauncherDir, "dalamudConfig.json");
@@ -399,6 +401,10 @@ namespace Dalamud.Injector
             else if (languageStr[0..(len = Math.Min(languageStr.Length, (key = "français").Length))] == key[0..len])
             {
                 clientLanguage = ClientLanguage.French;
+            }
+            else if (languageStr[0..(len = Math.Min(languageStr.Length, (key = "chinesesimplified").Length))] == key[0..len])
+            {
+                clientLanguage = ClientLanguage.ChineseSimplified;
             }
             else if (int.TryParse(languageStr, out var languageInt) && Enum.IsDefined((ClientLanguage)languageInt))
             {
@@ -552,7 +558,12 @@ namespace Dalamud.Injector
 
             for (var i = 2; i < args.Count; i++)
             {
-                if (int.TryParse(args[i], out int pid))
+                var isHex = args[i].StartsWith("0x");
+                if (int.TryParse(
+                    isHex ? args[i].Substring(2) : args[i],
+                    isHex ? NumberStyles.HexNumber : NumberStyles.Integer,
+                    NumberFormatInfo.CurrentInfo,
+                    out int pid))
                 {
                     targetProcessSpecified = true;
                     try
@@ -639,7 +650,18 @@ namespace Dalamud.Injector
             }
 
             foreach (var process in processes)
+            {
+                for (var j = 0; j < process.Modules.Count; j++)
+                {
+                    if (process.Modules[j].ModuleName == "Dalamud.dll")
+                    {
+                        goto next;
+                    }
+                }
+
                 Inject(process, AdjustStartInfo(dalamudStartInfo, process.MainModule.FileName), tryFixAcl);
+            next:;
+            }
 
             Log.CloseAndFlush();
             return 0;

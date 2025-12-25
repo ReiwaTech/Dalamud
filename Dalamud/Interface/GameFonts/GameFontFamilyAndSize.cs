@@ -51,6 +51,38 @@ public enum GameFontFamilyAndSize
     Axis36,
 
     /// <summary>
+    /// CHNAXIS (120pt)
+    ///
+    /// Contains Chinese characters in addition to Latin characters. Used in game for the whole UI.
+    /// </summary>
+    [GameFontFamilyAndSize("common/font/chnaxis_120.fdt", "common/font/font_chn_{0}.tex", -1)]
+    ChnAxis120,
+
+    /// <summary>
+    /// CHNAXIS (140pt)
+    ///
+    /// Contains Chinese characters in addition to Latin characters. Used in game for the whole UI.
+    /// </summary>
+    [GameFontFamilyAndSize("common/font/chnaxis_140.fdt", "common/font/font_chn_{0}.tex", -1)]
+    ChnAxis140,
+
+    /// <summary>
+    /// CHNAXIS (180pt)
+    ///
+    /// Contains Chinese characters in addition to Latin characters. Used in game for the whole UI.
+    /// </summary>
+    [GameFontFamilyAndSize("common/font/chnaxis_180.fdt", "common/font/font_chn_{0}.tex", -1)]
+    ChnAxis180,
+
+    /// <summary>
+    /// CHNAXIS (360pt)
+    ///
+    /// Contains Chinese characters in addition to Latin characters. Used in game for the whole UI.
+    /// </summary>
+    [GameFontFamilyAndSize("common/font/chnaxis_360.fdt", "common/font/font_chn_{0}.tex", -1)]
+    ChnAxis360,
+
+    /// <summary>
     /// Jupiter (16pt)
     ///
     /// Serif font. Contains mostly ASCII range. Used in game for job names.

@@ -64,7 +64,7 @@ internal class PluginRepository
             },
         };
         this.PluginMasterUrl = pluginMasterUrl;
-        this.IsThirdParty = pluginMasterUrl != MainRepoUrl;
+        this.IsThirdParty = false && pluginMasterUrl != MainRepoUrl;
         this.IsEnabled = isEnabled;
     }
 

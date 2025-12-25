@@ -560,34 +560,10 @@ internal sealed partial class FontAtlasFactory
             if (targetFont.IsNull)
                 return;
 
-            var dalamudConfiguration = Service<DalamudConfiguration>.Get();
-            if (dalamudConfiguration.EffectiveLanguage == "ko"
-                || Service<DalamudIme>.GetNullable()?.EncounteredHangul is true)
+            this.AttachWindowsDefaultFont(CultureInfo.GetCultureInfo("zh-hans"), fontConfig with
             {
-                this.AddDalamudAssetFont(
-                    DalamudAsset.NotoSansKrRegular,
-                    fontConfig with
-                    {
-                        MergeFont = targetFont,
-                        GlyphRanges = default(FluentGlyphRangeBuilder).WithLanguage("ko-kr").BuildExact(),
-                    });
-            }
-
-            if (Service<DalamudConfiguration>.Get().EffectiveLanguage == "tw")
-            {
-                this.AttachWindowsDefaultFont(CultureInfo.GetCultureInfo("zh-hant"), fontConfig with
-                {
-                    GlyphRanges = default(FluentGlyphRangeBuilder).WithLanguage("zh-hant").BuildExact(),
-                });
-            }
-            else if (Service<DalamudConfiguration>.Get().EffectiveLanguage == "zh"
-                     || Service<DalamudIme>.GetNullable()?.EncounteredHan is true)
-            {
-                this.AttachWindowsDefaultFont(CultureInfo.GetCultureInfo("zh-hans"), fontConfig with
-                {
-                    GlyphRanges = default(FluentGlyphRangeBuilder).WithLanguage("zh-hans").BuildExact(),
-                });
-            }
+                GlyphRanges = default(FluentGlyphRangeBuilder).WithLanguage("zh-hans").BuildExact(),
+            });
         }
 
         public void PreBuildSubstances()
@@ -628,7 +604,7 @@ internal sealed partial class FontAtlasFactory
             if (this.data.ConfigData.Length == 0)
             {
                 this.AddDalamudAssetFont(
-                    DalamudAsset.NotoSansJpMedium,
+                    DalamudAsset.NotoSansScMedium,
                     new() { GlyphRanges = new ushort[] { ' ', ' ', '\0' }, SizePx = 1 });
             }
 

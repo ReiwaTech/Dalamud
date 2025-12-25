@@ -91,8 +91,8 @@ public sealed class EntryPoint
     {
         var logFileName = logName.IsNullOrEmpty() ? "dalamud" : $"dalamud-{logName}";
 
-        var logPath = new FileInfo(Path.Combine(baseDirectory, $"{logFileName}.log"));
-        var oldPath = new FileInfo(Path.Combine(baseDirectory, $"{logFileName}.old.log"));
+        var logPath = new FileInfo(Path.Combine(baseDirectory, "..", $"{logFileName}.log"));
+        var oldPath = new FileInfo(Path.Combine(baseDirectory, "..", $"{logFileName}.old.log"));
 
         Log.CloseAndFlush();
 
