@@ -19,14 +19,6 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      - name: Install Visual Studio Build Tools
-        shell: pwsh
-        run: |
-          Write-Host "Installing VS 2026 Build Tools..."
-          choco install visualstudio2026buildtools `
-            --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --includeRecommended --quiet" `
-            -y --ignore-package-exit-codes=3010
-          Write-Host "VS 2026 Build Tools installation completed" 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
       - uses: actions/setup-dotnet@v5
