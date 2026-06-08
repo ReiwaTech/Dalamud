@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+      - cn
     tags-ignore:
       - '*' # don't needlessly execute on tags
 
