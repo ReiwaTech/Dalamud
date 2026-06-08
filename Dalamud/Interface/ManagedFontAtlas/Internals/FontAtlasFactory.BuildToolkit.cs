@@ -370,10 +370,7 @@ internal sealed partial class FontAtlasFactory
                     return this.factory.AddFont(
                         this,
                         asset,
-                        fontConfig with
-                        {
-                            FontNo = 0,
-                        });
+                        fontConfig);
             }
         }
 
@@ -560,10 +557,41 @@ internal sealed partial class FontAtlasFactory
             if (targetFont.IsNull)
                 return;
 
-            this.AttachWindowsDefaultFont(CultureInfo.GetCultureInfo("zh-hans"), fontConfig with
+            var dalamudConfiguration = Service<DalamudConfiguration>.Get();
+            var ime = Service<DalamudIme>.GetNullable();
+
+            string langTag = null;
+            // fontNo: 0 = japanese, 1 = traditional chinese, 2 = simplified chinese, 3 = korean
+            int fontNo = 0;
+
+            if (dalamudConfiguration.EffectiveLanguage == "tw")
             {
-                GlyphRanges = default(FluentGlyphRangeBuilder).WithLanguage("zh-hans").BuildExact(),
-            });
+                langTag = "zh-hant";
+                fontNo = 1;
+            }
+            else if (dalamudConfiguration.EffectiveLanguage == "zh" || ime?.EncounteredHan is true)
+            {
+                langTag = "zh-hans";
+                fontNo = 2;
+            }
+            else if (dalamudConfiguration.EffectiveLanguage == "ko" || ime?.EncounteredHangul is true)
+            {
+                langTag = "ko-kr";
+                fontNo = 3;
+            }
+
+            Log.Debug($"Loading extra glyphs for language tag '{langTag}' (font no {fontNo})");
+            if (langTag != null)
+            {
+                this.AddDalamudAssetFont(
+                    DalamudAsset.NotoSansCjkRegular,
+                    fontConfig with
+                    {
+                        FontNo = fontNo,
+                        MergeFont = targetFont,
+                        GlyphRanges = default(FluentGlyphRangeBuilder).WithLanguage(langTag).BuildExact(),
+                    });
+            }
         }
 
         public void PreBuildSubstances()
@@ -604,7 +632,7 @@ internal sealed partial class FontAtlasFactory
             if (this.data.ConfigData.Length == 0)
             {
                 this.AddDalamudAssetFont(
-                    DalamudAsset.NotoSansScMedium,
+                    DalamudAsset.NotoSansCjkRegular,
                     new() { GlyphRanges = [' ', ' ', '\0'], SizePx = 1 });
             }
 

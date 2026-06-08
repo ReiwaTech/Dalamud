@@ -1,3 +1,5 @@
+using Dalamud.Utility;
+
 using Lumina.Excel;
 using Lumina.Excel.Sheets;
 
@@ -145,6 +147,13 @@ public interface IUnlockState : IDalamudService
     bool IsChocoboTaxiStandUnlocked(ChocoboTaxiStand row);
 
     /// <summary>
+    /// Determines whether the specified ClassJob is unlocked.
+    /// </summary>
+    /// <param name="row">The ClassJob row to check.</param>
+    /// <returns><see langword="true"/> if unlocked; otherwise, <see langword="false"/>.</returns>
+    bool IsClassJobUnlocked(ClassJob row);
+
+    /// <summary>
     /// Determines whether the specified Companion (Minions) is unlocked.
     /// </summary>
     /// <param name="row">The Companion row to check.</param>
@@ -199,6 +208,13 @@ public interface IUnlockState : IDalamudService
     /// <param name="row">The Glasses row to check.</param>
     /// <returns><see langword="true"/> if unlocked; otherwise, <see langword="false"/>.</returns>
     bool IsGlassesUnlocked(Glasses row);
+
+    /// <summary>
+    /// Determines whether the specified GlassesStyle is unlocked.
+    /// </summary>
+    /// <param name="row">The GlassesStyle row to check.</param>
+    /// <returns><see langword="true"/> if unlocked; otherwise, <see langword="false"/>.</returns>
+    bool IsGlassesStyleUnlocked(GlassesStyle row);
 
     /// <summary>
     /// Determines whether the specified HowTo is unlocked.
@@ -362,6 +378,15 @@ public interface IUnlockState : IDalamudService
     /// <param name="unlockLink">The unlock link id or quest id (quest ids in this case are over 65536).</param>
     /// <returns><see langword="true"/> if unlocked; otherwise, <see langword="false"/>.</returns>
     bool IsUnlockLinkUnlocked(uint unlockLink);
+
+    /// <summary>
+    /// Determines whether the specified unlock link is unlocked or quest is completed.
+    /// </summary>
+    /// <param name="unlockLink">The unlock link id or quest id (quest ids in this case are over 65536).</param>
+    /// <param name="minimumQuestSequence">The minimum progression (sequence) of a quest.</param>
+    /// <returns><see langword="true"/> if unlocked; otherwise, <see langword="false"/>.</returns>
+    [Api16ToDo("Remove overload without second parameter, give this minimumQuestSequence a default of 0.")]
+    bool IsUnlockLinkUnlocked(uint unlockLink, byte minimumQuestSequence);
 
     /// <summary>
     /// Determines whether the specified unlock link is unlocked.

@@ -1,15 +1,19 @@
+using System.Collections.Concurrent;
+using System.Collections.Frozen;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 using Dalamud.Configuration.Internal;
-using Dalamud.Game;
 using Dalamud.Logging.Internal;
 
 using FFXIVClientStructs.FFXIV.Application.Network;
-
 using InteropGenerator.Runtime;
+using InteropGenerator.Runtime.Attributes;
 
 namespace Dalamud.Hooking.Internal.Verification;
 
@@ -18,110 +22,232 @@ namespace Dalamud.Hooking.Internal.Verification;
 /// Initialized out-of-band, since Hook is instantiated all over the place without a service, so this cannot be
 /// a service either.
 /// </summary>
-internal static class HookVerifier
+internal static partial class HookVerifier
 {
     private static readonly ModuleLog Log = new("HookVerifier");
 
-    private static readonly VerificationEntry[] ToVerify =
-    [
-        new(
-            "ActorControlSelf",
-            "E8 ?? ?? ?? ?? 0F B7 0B 83 E9 64",
-            typeof(ActorControlSelfDelegate), // TODO: change this to CS delegate
-            "Signature changed in Patch 7.4"), // 7.4 (new parameters)
-        new(
-            "SendPacket",
-            ZoneClient.Addresses.SendPacket.String,
-            typeof(ZoneClient.Delegates.SendPacket),
-            "Force marshaling context") // If people hook with 4 byte return this locks people out from logging in
-    ];
+    /// <summary>
+    /// Hook verification targets that don't exist in ClientStructs.
+    /// </summary>
+    private static readonly VerificationEntry[] ExternalVerificationTargets = [];
 
     private static readonly string ClientStructsInteropNamespacePrefix = string.Join(".", nameof(FFXIVClientStructs), nameof(FFXIVClientStructs.Interop));
 
-    private delegate void ActorControlSelfDelegate(uint category, uint eventId, uint param1, uint param2, uint param3, uint param4, uint param5, uint param6, uint param7, uint param8, ulong targetId, byte param9); // TODO: change this to CS delegate
+    private static FrozenDictionary<nint, VerificationEntry[]> allToVerify = FrozenDictionary<nint, VerificationEntry[]>.Empty;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="HookVerifier"/> class.
     /// </summary>
-    /// <param name="scanner">Process to scan in.</param>
-    public static void Initialize(TargetSigScanner scanner)
+    public static void Initialize()
     {
-        foreach (var entry in ToVerify)
-        {
-            if (!scanner.TryScanText(entry.Signature, out var address))
-            {
-                Log.Error("Could not resolve signature for hook {Name} ({Sig})", entry.Name, entry.Signature);
-                continue;
-            }
+        var csAssembly = Assembly.GetAssembly(typeof(ZoneClient))!;
+        var csTypes = csAssembly.GetTypes();
 
-            entry.Address = address;
+        var verifyContainer = new ConcurrentBag<VerificationEntry>();
+
+        Parallel.ForEach(
+            csTypes,
+            csType =>
+            {
+                var methods = csType.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public);
+                if (methods.Length == 0)
+                    return;
+
+                var fullName = ClientStructsNamespaceTrim().Replace(csType.FullName!, string.Empty).Replace(".", "::");
+
+                Type? addressesType = null;
+                Type? delegateType = null;
+                foreach (var method in methods)
+                {
+                    if (Attribute.IsDefined(method, typeof(ObsoleteAttribute))) continue;
+
+                    if (!Attribute.IsDefined(method, typeof(MemberFunctionAttribute)) &&
+                        !Attribute.IsDefined(method, typeof(StaticAddressAttribute)))
+                        continue;
+
+                    addressesType ??= csAssembly.GetType(csType.FullName + "+Addresses");
+
+                    if (addressesType == null)
+                    {
+                        Log.Warning(
+                            "Could not find Addresses type for {Type}, skipping verification for all members",
+                            csType.FullName);
+                        continue;
+                    }
+
+                    var address = addressesType.GetField(method.Name, BindingFlags.Static | BindingFlags.Public)
+                                               ?.GetValue(null);
+                    if (address is not Address addressValue)
+                    {
+                        Log.Warning(
+                            "Could not find address for {Type}.{Member}, skipping verification",
+                            csType.FullName,
+                            method.Name);
+                        continue;
+                    }
+
+                    var name = fullName + "." + method.Name;
+                    if (method.GetCustomAttribute<MemberFunctionAttribute>() is { } memberFunctionAttribute)
+                    {
+                        if (!method.IsStatic)
+                        {
+                            delegateType ??= csAssembly.GetType(csType.FullName + "+Delegates");
+                            if (delegateType == null)
+                            {
+                                Log.Warning(
+                                    "Could not find delegate type for {Type}.{Member}, skipping verification",
+                                    csType.FullName,
+                                    method.Name);
+                                continue;
+                            }
+
+                            var delegateMember = delegateType.GetMember(method.Name);
+                            if (delegateMember.Length != 0)
+                            {
+                                verifyContainer.Add(
+                                    new VerificationEntry(
+                                        name,
+                                        memberFunctionAttribute.Signature,
+                                        addressValue.Value,
+                                        (Type)delegateMember[0]));
+                            }
+                            else
+                            {
+                                verifyContainer.Add(
+                                    new VerificationEntry(
+                                        name,
+                                        memberFunctionAttribute.Signature,
+                                        addressValue.Value,
+                                        Parameters: method.GetParameters(),
+                                        ReturnType: method.ReturnType));
+                            }
+                        }
+                        else
+                        {
+                            verifyContainer.Add(
+                                new VerificationEntry(
+                                    name,
+                                    memberFunctionAttribute.Signature,
+                                    addressValue.Value,
+                                    Parameters: method.GetParameters(),
+                                    ReturnType: method.ReturnType));
+                        }
+                    }
+                    else if (method.GetCustomAttribute<StaticAddressAttribute>() is { } staticAddressAttribute)
+                    {
+                        verifyContainer.Add(
+                            new VerificationEntry(
+                                name,
+                                staticAddressAttribute.Signature,
+                                addressValue.Value,
+                                Parameters: method.GetParameters(),
+                                ReturnType: method.ReturnType));
+                    }
+                }
+            });
+
+        foreach (var entry in ExternalVerificationTargets)
+        {
+            verifyContainer.Add(entry);
         }
+
+        allToVerify = verifyContainer.GroupBy(v => v.Address).ToFrozenDictionary(v => v.Key, v => v.ToArray());
+        Log.Verbose("Initialized HookVerifier with {Count} entries to verify", allToVerify.Sum(kv => kv.Value.Length));
+
+        verifyContainer.Clear();
     }
 
     /// <summary>
     /// Verify the hook with the provided address and exception.
     /// </summary>
     /// <param name="address">The address of the function we are hooking.</param>
+    /// <param name="hookCaller">The caller that is trying to create the hook.</param>
+    /// <param name="exceptions">The exceptions when we think one of the hooks for this address is not correctly declared.</param>
     /// <typeparam name="T">The delegate type passed by the creator of the hook.</typeparam>
-    /// <exception cref="HookVerificationException">Exception thrown when we think the hook is not correctly declared.</exception>
-    public static void Verify<T>(IntPtr address) where T : Delegate
+    /// <returns> <see langword="true"/> when we think the hook is not correctly declared, otherwise <see langword="false"/>. </returns>
+    public static bool TryVerify<T>(IntPtr address, Assembly hookCaller, out HookVerificationException[] exceptions) where T : Delegate
     {
-        // API15 TODO: Always throw
-        var config = Service<DalamudConfiguration>.GetNullable();
-        if (config != null && config.DevPluginLoadLocations.Count == 0)
-        {
-            return;
-        }
-
-        var entry = ToVerify.FirstOrDefault(x => x.Address == address);
+        exceptions = [];
 
         // Nothing to verify for this hook?
-        if (entry == null)
-        {
-            return;
-        }
+        if (!allToVerify.TryGetValue(address, out var entries))
+            return true;
 
         var passedType = typeof(T);
-        var isAssemblyMarshaled = passedType.Assembly.GetCustomAttribute<DisableRuntimeMarshallingAttribute>() is null;
-
-        // Directly compare delegates
-        if (passedType == entry.TargetDelegateType)
-        {
-            return;
-        }
+        var isAssemblyMarshaled = !Attribute.IsDefined(passedType.Assembly, typeof(DisableRuntimeMarshallingAttribute));
+        string? failContext = null;
 
         var passedInvoke = passedType.GetMethod("Invoke")!;
-        var enforcedInvoke = entry.TargetDelegateType.GetMethod("Invoke")!;
-
-        // Compare Return Type
-        var mismatch = !CheckParam(passedInvoke.ReturnType, enforcedInvoke.ReturnType, isAssemblyMarshaled);
-
-        // Compare Parameter Count
         var passedParams = passedInvoke.GetParameters();
-        var enforcedParams = enforcedInvoke.GetParameters();
 
-        if (passedParams.Length != enforcedParams.Length)
+        var ret = true;
+        foreach (var entry in entries)
         {
-            mismatch = true;
-        }
-        else
-        {
-            // Compare Parameter Types
-            for (var i = 0; i < passedParams.Length; i++)
+            // Check if entry is a delegate or method check
+            ParameterInfo[] enforcedParams;
+            bool mismatch;
+            if (entry.TargetDelegateType != null)
             {
-                if (!CheckParam(passedParams[i].ParameterType, enforcedParams[i].ParameterType, isAssemblyMarshaled))
+                // Directly compare delegates
+                if (passedType == entry.TargetDelegateType)
+                    continue;
+
+                var enforcedInvoke = entry.TargetDelegateType.GetMethod("Invoke")!;
+
+                // Compare Return Type
+                mismatch = !CheckParam(passedInvoke.ReturnType, enforcedInvoke.ReturnType, isAssemblyMarshaled);
+
+                // Compare Parameter Count
+                enforcedParams = enforcedInvoke.GetParameters();
+            }
+            else
+            {
+                // Compare Return Type
+                mismatch = !CheckParam(passedInvoke.ReturnType, entry.ReturnType!, isAssemblyMarshaled);
+
+                // Compare Parameter Count
+                enforcedParams = entry.Parameters!;
+            }
+
+            if (passedParams.Length != enforcedParams.Length)
+            {
+                mismatch = true;
+                failContext = "Param count check.";
+            }
+            else if (!mismatch)
+            {
+                // Compare Parameter Types
+                for (var i = 0; i < passedParams.Length; i++)
                 {
-                    mismatch = true;
-                    break;
+                    if (!CheckParam(passedParams[i].ParameterType, enforcedParams[i].ParameterType, isAssemblyMarshaled))
+                    {
+                        mismatch = true;
+                        failContext = "Param type check.";
+                        break;
+                    }
                 }
+            }
+            else
+            {
+                failContext = "Return type check.";
+            }
+
+            if (mismatch)
+            {
+                var enforcedDelegate = entry.TargetDelegateType != null ?
+                    HookVerificationException.GetSignature(entry.TargetDelegateType) :
+                    $"{entry.ReturnType!.Name} ({string.Join(", ", entry.Parameters!.Select(p => p.ParameterType.Name))})";
+
+                exceptions = [HookVerificationException.Create(address, passedType, enforcedDelegate, entry.Message, entry.Name, entry.Signature, failContext, hookCaller), .. exceptions];
+                ret = false;
             }
         }
 
-        if (mismatch)
-        {
-            throw HookVerificationException.Create(address, passedType, entry.TargetDelegateType, entry.Message);
-        }
+        return ret;
     }
+
+    [GeneratedRegex($@"^{nameof(FFXIVClientStructs)}\.({nameof(FFXIVClientStructs.FFXIV)}|{nameof(FFXIVClientStructs.Havok)}|{nameof(FFXIVClientStructs.Interop)}|{nameof(FFXIVClientStructs.STD)})\.", RegexOptions.Singleline)]
+    private static partial Regex ClientStructsNamespaceTrim();
 
     private static bool CheckParam(Type paramLeft, Type paramRight, bool isMarshaled)
     {
@@ -131,7 +257,8 @@ internal static class HookVerifier
 
     private static int SizeOf(Type type, bool isMarshaled)
     {
-        return type switch {
+        return type switch
+        {
             _ when type == typeof(sbyte) || type == typeof(byte) || (type == typeof(bool) && !isMarshaled) => 1,
             _ when type == typeof(char) || type == typeof(short) || type == typeof(ushort) || type == typeof(Half) => 2,
             _ when type == typeof(int) || type == typeof(uint) || type == typeof(float) || (type == typeof(bool) && isMarshaled) => 4,
@@ -158,12 +285,14 @@ internal static class HookVerifier
     }
 
     private static bool IsStruct(Type type)
-    {
-        return type != typeof(decimal) && type is { IsValueType: true, IsPrimitive: false, IsEnum: false };
-    }
+        => type != typeof(decimal) && type is { IsValueType: true, IsPrimitive: false, IsEnum: false };
 
-    private record VerificationEntry(string Name, string Signature, Type TargetDelegateType, string Message)
-    {
-        public nint Address { get; set; }
-    }
+    private record VerificationEntry(
+        string Name,
+        string Signature,
+        nint Address,
+        Type? TargetDelegateType = null,
+        ParameterInfo[]? Parameters = null,
+        Type? ReturnType = null,
+        string Message = "Failed match against expected documentation.");
 }

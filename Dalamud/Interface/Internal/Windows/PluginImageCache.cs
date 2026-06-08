@@ -45,26 +45,26 @@ internal class PluginImageCache : IInternalDisposableService
     /// </summary>
     public const int PluginIconHeight = 512;
 
-    private const string MainRepoImageUrl = "https://raw.githubusercontent.com/goatcorp/DalamudPlugins/api6/{0}/{1}/images/{2}";
     private const string MainRepoDip17ImageUrl = "https://raw.githubusercontent.com/goatcorp/PluginDistD17/main/{0}/{1}/images/{2}";
 
     [ServiceManager.ServiceDependency]
     private readonly HappyHttpClient happyHttpClient = Service<HappyHttpClient>.Get();
+
+    [ServiceManager.ServiceDependency]
+    private readonly DalamudAssetManager dalamudAssetManager = Service<DalamudAssetManager>.Get();
 
     private readonly BlockingCollection<Tuple<ulong, Func<Task>>> downloadQueue = [];
     private readonly BlockingCollection<Func<Task>> loadQueue = [];
     private readonly CancellationTokenSource cancelToken = new();
     private readonly Task downloadTask;
     private readonly Task loadTask;
-    
+
     private readonly ConcurrentDictionary<string, LoadedIcon?> pluginIconMap = new();
     private readonly ConcurrentDictionary<string, IDalamudTextureWrap?[]?> pluginImagesMap = new();
-    private readonly DalamudAssetManager dalamudAssetManager;
 
     [ServiceManager.ServiceConstructor]
-    private PluginImageCache(Dalamud dalamud, DalamudAssetManager dalamudAssetManager)
+    private PluginImageCache()
     {
-        this.dalamudAssetManager = dalamudAssetManager;
         this.downloadTask = Task.Factory.StartNew(
             () => this.DownloadTask(8), TaskCreationOptions.LongRunning);
         this.loadTask = Task.Factory.StartNew(
@@ -100,7 +100,7 @@ internal class PluginImageCache : IInternalDisposableService
     /// </summary>
     public IDalamudTextureWrap TroubleIcon =>
         this.dalamudAssetManager.GetDalamudTextureWrap(DalamudAsset.TroubleIcon, this.EmptyTexture);
-    
+
     /// <summary>
     /// Gets the devPlugin icon overlay.
     /// </summary>
@@ -191,18 +191,16 @@ internal class PluginImageCache : IInternalDisposableService
     /// <returns>True if an entry exists, may be null if currently downloading.</returns>
     public bool TryGetIcon(LocalPlugin? plugin, IPluginManifest manifest, bool isThirdParty, out IDalamudTextureWrap? iconTexture, out DateTime? loadedSince)
     {
+        ArgumentNullException.ThrowIfNull(manifest);
+
         iconTexture = null;
         loadedSince = null;
 
-        if (manifest == null || manifest.InternalName == null)
-        {
-            Log.Error("THIS SHOULD NEVER HAPPEN! manifest == null || manifest.InternalName == null");
-            return false;
-        }
+        var key = plugin?.EffectiveWorkingPluginId.ToString() ?? manifest.InternalName;
 
-        if (!this.pluginIconMap.TryAdd(manifest.InternalName, null))
+        if (!this.pluginIconMap.TryAdd(key, null))
         {
-            var loaded = this.pluginIconMap[manifest.InternalName];
+            var loaded = this.pluginIconMap[key];
             if (loaded != null)
             {
                 iconTexture = loaded.Texture;
@@ -219,7 +217,7 @@ internal class PluginImageCache : IInternalDisposableService
             {
                 var texture = await this.DownloadPluginIconAsync(plugin, manifest, isThirdParty, requestedFrame);
                 if (texture != null)
-                    this.pluginIconMap[manifest.InternalName] = new LoadedIcon(texture, DateTime.Now);
+                    this.pluginIconMap[key] = new LoadedIcon(texture, DateTime.Now);
             }
             catch (Exception ex)
             {
@@ -241,10 +239,12 @@ internal class PluginImageCache : IInternalDisposableService
     /// <returns>True if the image array exists, may be empty if currently downloading.</returns>
     public bool TryGetImages(LocalPlugin? plugin, IPluginManifest manifest, bool isThirdParty, out IDalamudTextureWrap?[] imageTextures)
     {
+        ArgumentNullException.ThrowIfNull(manifest);
+
         if (!this.pluginImagesMap.TryAdd(manifest.InternalName, null))
         {
             var found = this.pluginImagesMap[manifest.InternalName];
-            imageTextures = found ?? Array.Empty<IDalamudTextureWrap?>();
+            imageTextures = found ?? [];
             return true;
         }
 
@@ -475,8 +475,7 @@ internal class PluginImageCache : IInternalDisposableService
             isThirdParty = true;
         }
 
-        var useTesting = Service<PluginManager>.Get().UseTesting(manifest);
-        var url = this.GetPluginIconUrl(manifest, isThirdParty, useTesting);
+        var url = this.GetPluginIconUrl(manifest, isThirdParty);
 
         if (url.IsNullOrEmpty())
         {
@@ -561,8 +560,7 @@ internal class PluginImageCache : IInternalDisposableService
             isThirdParty = true;
         }
 
-        var useTesting = Service<PluginManager>.Get().UseTesting(manifest);
-        var urls = this.GetPluginImageUrls(manifest, isThirdParty, useTesting);
+        var urls = this.GetPluginImageUrls(manifest, isThirdParty);
         urls = urls?.Where(x => !string.IsNullOrEmpty(x)).ToList();
         if (urls?.Any() != true)
         {
@@ -582,8 +580,7 @@ internal class PluginImageCache : IInternalDisposableService
                 var bytes = await this.RunInDownloadQueue<byte[]?>(
                                 async () =>
                                 {
-                                    var httpClient = Service<HappyHttpClient>.Get().SharedHttpClient;
-
+                                    var httpClient = this.happyHttpClient.SharedHttpClient;
                                     var data = await httpClient.GetAsync(url);
                                     if (data.StatusCode == HttpStatusCode.NotFound)
                                         return null;
@@ -622,15 +619,18 @@ internal class PluginImageCache : IInternalDisposableService
         }
     }
 
-    private string? GetPluginIconUrl(IPluginManifest manifest, bool isThirdParty, bool isTesting)
+    private string? GetPluginIconUrl(IPluginManifest manifest, bool isThirdParty)
     {
         if (isThirdParty)
             return manifest.IconUrl;
 
+        if (manifest.Dip17Channel.IsNullOrEmpty())
+            return null;
+
         return MainRepoDip17ImageUrl.Format(manifest.Dip17Channel!, manifest.InternalName, "icon.png");
     }
 
-    private List<string?>? GetPluginImageUrls(IPluginManifest manifest, bool isThirdParty, bool isTesting)
+    private List<string?>? GetPluginImageUrls(IPluginManifest manifest, bool isThirdParty)
     {
         if (isThirdParty)
         {
@@ -687,7 +687,7 @@ internal class PluginImageCache : IInternalDisposableService
 
         return output;
     }
-    
+
     /// <summary>
     /// Record for a loaded icon.
     /// </summary>

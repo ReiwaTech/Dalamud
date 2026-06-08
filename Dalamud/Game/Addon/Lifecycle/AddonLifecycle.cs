@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Hooking;
@@ -36,9 +37,13 @@ internal unsafe class AddonLifecycle : IInternalDisposableService
     [ServiceManager.ServiceConstructor]
     private AddonLifecycle()
     {
-        this.onInitializeAddonHook = Hook<AtkUnitBase.Delegates.Initialize>.FromAddress((nint)AtkUnitBase.StaticVirtualTablePointer->Initialize, this.OnAddonInitialize);
-        this.onInitializeAddonHook.Enable();
+        this.InitializeAddonLifecycle();
     }
+
+    /// <summary>
+    /// Gets a value indicating whether AddonLifecycle is Enabled.
+    /// </summary>
+    internal bool IsEnabled { get; private set; }
 
     /// <summary>
     /// Gets a list of all AddonLifecycle Event Listeners.
@@ -49,11 +54,7 @@ internal unsafe class AddonLifecycle : IInternalDisposableService
     /// <inheritdoc/>
     void IInternalDisposableService.DisposeService()
     {
-        this.onInitializeAddonHook?.Dispose();
-        this.onInitializeAddonHook = null;
-
-        AllocatedTables.ForEach(entry => entry.Dispose());
-        AllocatedTables.Clear();
+        this.UnloadAddonLifecycle();
     }
 
     /// <summary>
@@ -70,6 +71,34 @@ internal unsafe class AddonLifecycle : IInternalDisposableService
         }
 
         return matchedTable.OriginalVirtualTable;
+    }
+
+    /// <summary>
+    /// Enables AddonLifecycle to replace addon virtual tables for relaying addon events.
+    /// </summary>
+    internal void InitializeAddonLifecycle()
+    {
+        this.IsEnabled = true;
+
+        this.onInitializeAddonHook ??= Hook<AtkUnitBase.Delegates.Initialize>.FromAddress((nint)AtkUnitBase.StaticVirtualTablePointer->Initialize, this.OnAddonInitialize);
+        this.onInitializeAddonHook.Enable();
+    }
+
+    /// <summary>
+    /// Restores all modified addon virtual tables, and disables AddonLifecycle.
+    /// </summary>
+    internal void UnloadAddonLifecycle()
+    {
+        this.IsEnabled = false;
+
+        this.onInitializeAddonHook?.Dispose();
+        this.onInitializeAddonHook = null;
+
+        this.framework.RunOnFrameworkThread(() =>
+        {
+            AllocatedTables.ForEach(entry => entry.Dispose());
+            AllocatedTables.Clear();
+        });
     }
 
     /// <summary>
@@ -95,7 +124,7 @@ internal unsafe class AddonLifecycle : IInternalDisposableService
     internal void UnregisterListener(AddonLifecycleEventListener listener)
     {
         listener.IsRequestedToClear = true;
-        
+
         if (this.isInvokingListeners)
         {
             this.framework.RunOnTick(() => this.UnregisterListenerMethod(listener));
@@ -125,7 +154,7 @@ internal unsafe class AddonLifecycle : IInternalDisposableService
             foreach (var listener in globalListeners)
             {
                 if (listener.IsRequestedToClear) continue;
-                
+
                 try
                 {
                     listener.FunctionDelegate.Invoke(eventType, args);
@@ -143,7 +172,7 @@ internal unsafe class AddonLifecycle : IInternalDisposableService
             foreach (var listener in addonListener)
             {
                 if (listener.IsRequestedToClear) continue;
-                
+
                 try
                 {
                     listener.FunctionDelegate.Invoke(eventType, args);
@@ -229,13 +258,17 @@ internal class AddonLifecyclePluginScoped : IInternalDisposableService, IAddonLi
     private readonly AddonLifecycle addonLifecycleService = Service<AddonLifecycle>.Get();
 
     private readonly List<AddonLifecycleEventListener> eventListeners = [];
+    private readonly Lock listenerLock = new();
 
     /// <inheritdoc/>
     void IInternalDisposableService.DisposeService()
     {
-        foreach (var listener in this.eventListeners)
+        lock (this.listenerLock)
         {
-            this.addonLifecycleService.UnregisterListener(listener);
+            foreach (var listener in this.eventListeners)
+            {
+                this.addonLifecycleService.UnregisterListener(listener);
+            }
         }
     }
 
@@ -252,8 +285,12 @@ internal class AddonLifecyclePluginScoped : IInternalDisposableService, IAddonLi
     public void RegisterListener(AddonEvent eventType, string addonName, IAddonLifecycle.AddonEventDelegate handler)
     {
         var listener = new AddonLifecycleEventListener(eventType, addonName, handler);
-        this.eventListeners.Add(listener);
-        this.addonLifecycleService.RegisterListener(listener);
+
+        lock (this.listenerLock)
+        {
+            this.eventListeners.Add(listener);
+            this.addonLifecycleService.RegisterListener(listener);
+        }
     }
 
     /// <inheritdoc/>
@@ -274,15 +311,18 @@ internal class AddonLifecyclePluginScoped : IInternalDisposableService, IAddonLi
     /// <inheritdoc/>
     public void UnregisterListener(AddonEvent eventType, string addonName, IAddonLifecycle.AddonEventDelegate? handler = null)
     {
-        this.eventListeners.RemoveAll(entry =>
+        lock (this.listenerLock)
         {
-            if (entry.EventType != eventType) return false;
-            if (entry.AddonName != addonName) return false;
-            if (handler is not null && entry.FunctionDelegate != handler) return false;
+            this.eventListeners.RemoveAll(entry =>
+            {
+                if (entry.EventType != eventType) return false;
+                if (entry.AddonName != addonName) return false;
+                if (handler is not null && entry.FunctionDelegate != handler) return false;
 
-            this.addonLifecycleService.UnregisterListener(entry);
-            return true;
-        });
+                this.addonLifecycleService.UnregisterListener(entry);
+                return true;
+            });
+        }
     }
 
     /// <inheritdoc/>
@@ -296,13 +336,16 @@ internal class AddonLifecyclePluginScoped : IInternalDisposableService, IAddonLi
     {
         foreach (var handler in handlers)
         {
-            this.eventListeners.RemoveAll(entry =>
+            lock (this.listenerLock)
             {
-                if (entry.FunctionDelegate != handler) return false;
+                this.eventListeners.RemoveAll(entry =>
+                {
+                    if (entry.FunctionDelegate != handler) return false;
 
-                this.addonLifecycleService.UnregisterListener(entry);
-                return true;
-            });
+                    this.addonLifecycleService.UnregisterListener(entry);
+                    return true;
+                });
+            }
         }
     }
 

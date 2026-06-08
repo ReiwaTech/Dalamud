@@ -12,6 +12,7 @@ using CheapLoc;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Configuration.Internal;
 using Dalamud.Game;
+using Dalamud.Game.ClientState;
 using Dalamud.Game.ClientState.GamePad;
 using Dalamud.Game.ClientState.Keys;
 using Dalamud.Hooking;
@@ -90,6 +91,9 @@ internal partial class InterfaceManager : IInternalDisposableService
     [ServiceManager.ServiceDependency]
     private readonly Framework framework = Service<Framework>.Get();
 
+    [ServiceManager.ServiceDependency]
+    private readonly ClientState clientState = Service<ClientState>.Get();
+
     // ReShadeAddonInterface requires hooks to be alive to unregister itself.
     [ServiceManager.ServiceDependency]
     [UsedImplicitly]
@@ -124,6 +128,7 @@ internal partial class InterfaceManager : IInternalDisposableService
     private InterfaceManager()
     {
         this.framework.Update += this.FrameworkOnUpdate;
+        this.clientState.Login += this.OnLogin;
     }
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
@@ -307,6 +312,7 @@ internal partial class InterfaceManager : IInternalDisposableService
     /// </summary>
     void IInternalDisposableService.DisposeService()
     {
+        this.clientState.Login -= this.OnLogin;
         this.assertHandler.Dispose();
 
         // Unload hooks from the framework thread if possible.
@@ -334,6 +340,9 @@ internal partial class InterfaceManager : IInternalDisposableService
 
         this.IconFontHandle?.Dispose();
         this.IconFontHandle = null;
+
+        this.IconFontFixedWidthHandle?.Dispose();
+        this.IconFontFixedWidthHandle = null;
 
         Interlocked.Exchange(ref this.dalamudAtlas, null)?.Dispose();
         Interlocked.Exchange(ref this.backend, null)?.Dispose();
@@ -495,15 +504,6 @@ internal partial class InterfaceManager : IInternalDisposableService
     }
 
     /// <summary>
-    /// Clear font, style, and color stack. Dangerous, only use when you know
-    /// no one else has something pushed they may try to pop.
-    /// </summary>
-    public void ClearStacks()
-    {
-        ImGuiHelpers.ClearStacksOnContext();
-    }
-
-    /// <summary>
     /// Applies immersive dark mode to the game window based on the current system theme setting.
     /// </summary>
     internal void SetImmersiveModeFromSystemTheme()
@@ -571,6 +571,35 @@ internal partial class InterfaceManager : IInternalDisposableService
         return im;
     }
 
+    private void OnLogin()
+    {
+        var player = Service<Game.Player.PlayerState>.GetNullable();
+        if (player == null)
+            return;
+
+        var contentId = player.ContentId;
+        if (contentId == 0)
+            return;
+
+        var assignment = this.dalamudConfiguration.CharacterStyleAssignments
+                             .FirstOrDefault(x => x.ContentId == contentId);
+        if (assignment?.StyleName is not { Length: > 0 } styleName)
+            return;
+
+        var style = this.dalamudConfiguration.SavedStyles?.FirstOrDefault(x => x.Name == styleName);
+        if (style == null)
+        {
+            Log.Warning("Character style assignment references unknown style {StyleName}, ignoring", styleName);
+            return;
+        }
+
+        Log.Verbose("Applying character style assignment: {StyleName} for ContentId {ContentId}", styleName, contentId);
+        style.Apply();
+        this.dalamudConfiguration.ChosenStyle = styleName;
+        this.InvokeStyleChanged();
+        this.dalamudConfiguration.QueueSave();
+    }
+
     private unsafe void FrameworkOnUpdate(IFramework framework1)
     {
         // We now delay hooking until Framework is set up and has fired its first update.
@@ -631,9 +660,6 @@ internal partial class InterfaceManager : IInternalDisposableService
 
         while (this.runBeforeImGuiRender.TryDequeue(out var action))
             action.InvokeSafely();
-
-        // Process information needed by ImGuiHelpers each frame.
-        ImGuiHelpers.NewFrame();
 
         // Enable viewports if there are no issues.
         var viewportsEnable = this.dalamudConfiguration.IsDisableViewport ||
@@ -706,24 +732,25 @@ internal partial class InterfaceManager : IInternalDisposableService
 
             StyleModel.TransferOldModels();
 
+            StyleModelV1[] builtInStyles = [StyleModelV1.DalamudStandard, StyleModelV1.DalamudClassic, StyleModelV1.DalamudHazy];
+
             if (configuration.SavedStyles == null ||
-                configuration.SavedStyles.All(x => x.Name != StyleModelV1.DalamudStandard.Name))
+                configuration.SavedStyles.All(x => x.Name != builtInStyles[0].Name))
             {
-                configuration.SavedStyles = [StyleModelV1.DalamudStandard, StyleModelV1.DalamudClassic];
-                configuration.ChosenStyle = StyleModelV1.DalamudStandard.Name;
-            }
-            else if (configuration.SavedStyles.Count == 1)
-            {
-                configuration.SavedStyles.Add(StyleModelV1.DalamudClassic);
-            }
-            else if (configuration.SavedStyles[1].Name != StyleModelV1.DalamudClassic.Name)
-            {
-                configuration.SavedStyles.Insert(1, StyleModelV1.DalamudClassic);
+                configuration.SavedStyles = [..builtInStyles];
+                configuration.ChosenStyle = builtInStyles[0].Name;
             }
 
-            configuration.SavedStyles[0] = StyleModelV1.DalamudStandard;
-            configuration.SavedStyles[1] = StyleModelV1.DalamudClassic;
+            // Ensure built-in styles are pinned to the start of the list
+            for (var i = 0; i < builtInStyles.Length; i++)
+            {
+                if (configuration.SavedStyles.Count <= i || configuration.SavedStyles[i].Name != builtInStyles[i].Name)
+                    configuration.SavedStyles.Insert(i, builtInStyles[i]);
+                else
+                    configuration.SavedStyles[i] = builtInStyles[i];
+            }
 
+            // Use standard if the chosen style isn't there anymore
             var style = configuration.SavedStyles.FirstOrDefault(x => x.Name == configuration.ChosenStyle);
             if (style == null)
             {

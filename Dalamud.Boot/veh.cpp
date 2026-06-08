@@ -199,20 +199,7 @@ LONG exception_handler(EXCEPTION_POINTERS* ex)
     }
     else if (!g_clr)
     {
-        stackTrace = L"(no CLR stack trace available)";
-    }
-    else if (void* fn; const auto err = static_cast<DWORD>(g_clr->get_function_pointer(
-        L"Dalamud.EntryPoint, Dalamud",
-        L"VehCallback",
-        L"Dalamud.EntryPoint+VehDelegate, Dalamud",
-        nullptr, nullptr, &fn)))
-    {
-        stackTrace = std::format(L"Failed to read stack trace: 0x{:08x}", err);
-    }
-    else
-    {
-        stackTrace = static_cast<wchar_t*(*)()>(fn)();
-        // Don't free it, as the program's going to be quit anyway
+        stackTrace = L"(CLR was not loaded)";
     }
 
     exinfo.dwStackTraceLength = static_cast<DWORD>(stackTrace.size());
@@ -287,7 +274,7 @@ LONG WINAPI vectored_exception_handler(EXCEPTION_POINTERS* ex)
     return exception_handler(ex);
 }
 
-bool veh::add_handler(bool doFullDump, const std::string& workingDirectory)
+bool veh::add_handler(bool doFullDump, const std::string& workingDirectory, const std::wstring& bootLogPath, bool bootConsole)
 {
     if (g_veh_handle)
         return false;
@@ -385,6 +372,10 @@ bool veh::add_handler(bool doFullDump, const std::string& workingDirectory)
         logging::W("Failed to read path of the Dalamud Boot module: {}", path.error().describe());
         return false;
     }
+    if (!bootLogPath.empty())
+        args.emplace_back(std::format(L"--log-path={}", bootLogPath));
+    if (bootConsole)
+        args.emplace_back(L"--console");
 
     args.emplace_back(L"--");
     if (auto r = append_injector_launch_args(args); !r) {

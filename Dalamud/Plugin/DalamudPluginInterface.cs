@@ -81,6 +81,14 @@ internal sealed class DalamudPluginInterface : IDalamudPluginInterface, IDisposa
 
         localization.LocalizationChanged += this.OnLocalizationChanged;
         configuration.DalamudConfigurationSaved += this.OnDalamudConfigurationSaved;
+
+        // Clone manifest, fixup testing fields we moved
+        // API16: Remove
+        var copiedManifest = ((PluginManifest)plugin.Manifest).Copy();
+        copiedManifest.TestingAssemblyVersion = copiedManifest.AssemblyVersion;
+        copiedManifest.TestingDalamudApiLevel = copiedManifest.DalamudApiLevel;
+        copiedManifest.IsTestingExclusive = false; // No way to know
+        this.Manifest = copiedManifest;
     }
 
     /// <inheritdoc/>
@@ -102,13 +110,16 @@ internal sealed class DalamudPluginInterface : IDalamudPluginInterface, IDisposa
     public string InternalName => this.plugin.InternalName;
 
     /// <inheritdoc/>
-    public IPluginManifest Manifest => this.plugin.Manifest;
+    public IPluginManifest Manifest { get; }
 
     /// <inheritdoc/>
     public bool IsDev => this.plugin.IsDev;
 
     /// <inheritdoc/>
     public bool IsTesting { get; }
+
+    /// <inheritdoc/>
+    public bool IsInProfile => !this.plugin.IsInDefaultProfile;
 
     /// <inheritdoc/>
     public DateTime LoadTime { get; }
@@ -139,6 +150,9 @@ internal sealed class DalamudPluginInterface : IDalamudPluginInterface, IDisposa
 
     /// <inheritdoc/>
     public bool IsDebugging => Debugger.IsAttached;
+
+    /// <inheritdoc/>
+    public bool AllowSeasonalEvents => Service<DalamudConfiguration>.Get().AllowSeasonalEvents;
 
     /// <inheritdoc/>
     public string UiLanguage { get; private set; }
@@ -413,6 +427,18 @@ internal sealed class DalamudPluginInterface : IDalamudPluginInterface, IDisposa
         this.plugin.ServiceScope!.InjectPropertiesAsync(instance, this.GetPublicIocScopes(scopedObjects));
 
     #endregion
+
+    /// <inheritdoc/>
+    public async Task<PluginUpdate?> CheckForUpdateAsync()
+    {
+        var pm = Service<PluginManager>.Get();
+        await pm.WaitForReposAsync();
+
+        var update = pm.UpdatablePlugins.FirstOrDefault(x =>
+                                                            x.UpdateManifest.SourceRepo.PluginMasterUrl == this.SourceRepository &&
+                                                            x.UpdateManifest.InternalName == this.plugin.InternalName);
+        return update == null ? null : new PluginUpdate(update.EffectiveVersion, update.UseTesting, update.UpdateManifest.Changelog);
+    }
 
     /// <inheritdoc/>
     public void Dispose()

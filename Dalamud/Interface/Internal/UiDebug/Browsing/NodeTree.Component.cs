@@ -42,7 +42,28 @@ internal unsafe class ComponentNodeTree : ResNodeTree
     private protected override string GetHeaderText()
     {
         var childCount = (int)this.UldManager->NodeListCount;
-        return $"{this.componentType} Component Node{(childCount > 0 ? $" [+{childCount}]" : string.Empty)}";
+
+        var nodeType = $"{this.componentType} Component Node";
+
+        // If this node is defined as a known custom node, display the custom type instead
+        if (UiDebug.CustomNodeTypeDefinitions is not null && UiDebug.CustomNodeTypeDefinitions.TryGetValue((nint)this.Node, out var typeInfo))
+        {
+            if (typeInfo.IsGenericType)
+            {
+                nodeType = UiDebug.GetReadableTypeName(typeInfo);
+            }
+            else
+            {
+                nodeType = typeInfo.Name;
+            }
+        }
+
+        if (UiDebug.CustomNodeStringDefinitions is not null && UiDebug.CustomNodeStringDefinitions.TryGetValue((nint)this.Node, out var stringName))
+        {
+            nodeType = stringName;
+        }
+
+        return $"{nodeType}{(childCount > 0 ? $" [+{childCount}]" : string.Empty)}";
     }
 
     /// <inheritdoc/>

@@ -44,12 +44,6 @@ public sealed class EntryPoint
     public delegate void InitDelegate(IntPtr infoPtr, IntPtr mainThreadContinueEvent);
 
     /// <summary>
-    /// A delegate used from VEH handler on exception which CoreCLR will fast fail by default.
-    /// </summary>
-    /// <returns>HGLOBAL for message.</returns>
-    public delegate IntPtr VehDelegate();
-
-    /// <summary>
     /// Initialize Dalamud.
     /// </summary>
     /// <param name="infoPtr">Pointer to a serialized <see cref="DalamudStartInfo"/> data.</param>
@@ -63,22 +57,6 @@ public sealed class EntryPoint
             Windows.Win32.PInvoke.MessageBox(HWND.Null, "Press OK to continue (BeforeDalamudConstruct)", "Dalamud Boot", MESSAGEBOX_STYLE.MB_OK);
 
         new Thread(() => RunThread(info, mainThreadContinueEvent)).Start();
-    }
-
-    /// <summary>
-    /// Returns stack trace.
-    /// </summary>
-    /// <returns>HGlobal to wchar_t* stack trace c-string.</returns>
-    public static IntPtr VehCallback()
-    {
-        try
-        {
-            return Marshal.StringToHGlobalUni(new StackTrace(1).ToString());
-        }
-        catch (Exception e)
-        {
-            return Marshal.StringToHGlobalUni("Fail: " + e);
-        }
     }
 
     /// <summary>
@@ -212,6 +190,7 @@ public sealed class EntryPoint
         catch (Exception ex)
         {
             Log.Fatal(ex, "Unhandled exception on main thread.");
+            ErrorHandling.ShowSystemIntegrityPolicyErrorIfApplicable(ex);
         }
         finally
         {
@@ -285,6 +264,7 @@ public sealed class EntryPoint
             case Exception ex:
                 Log.Fatal(ex, "Unhandled exception on AppDomain");
                 Troubleshooting.LogException(ex, "DalamudUnhandled");
+                ErrorHandling.ShowSystemIntegrityPolicyErrorIfApplicable(ex);
 
                 var info = "Further information could not be obtained";
                 if (ex.TargetSite != null && ex.TargetSite.DeclaringType != null)
