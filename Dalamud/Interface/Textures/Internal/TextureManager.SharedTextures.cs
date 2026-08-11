@@ -65,16 +65,20 @@ internal sealed partial class TextureManager
         private readonly ConcurrentDictionary<string, SharedImmediateTexture> fileDict = new();
         private readonly ConcurrentDictionary<(Assembly, string), SharedImmediateTexture> manifestResourceDict = new();
         private readonly HashSet<SharedImmediateTexture> invalidatedTextures = [];
+        private readonly Lock invalidatedTexturesLock = new();
 
         private readonly Thread sharedTextureReleaseThread;
 
-        private readonly CancellationTokenSource disposingCancellationTokenSource = new();
+        private readonly CancellationTokenSource disposingCancellationTokenSource;
 
         /// <summary>Initializes a new instance of the <see cref="SharedTextureManager"/> class.</summary>
         /// <param name="textureManager">An instance of <see cref="Interface.Textures.Internal.TextureManager"/>.</param>
         public SharedTextureManager(TextureManager textureManager)
         {
             this.textureManager = textureManager;
+
+            this.disposingCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(
+                textureManager.gameLifecycle.GameShuttingDownToken);
 
             this.sharedTextureReleaseThread = new(this.ReleaseSharedTextures)
             {
@@ -93,12 +97,11 @@ internal sealed partial class TextureManager
         public ICollection<SharedImmediateTexture> ForDebugManifestResourceTextures => this.manifestResourceDict.Values;
 
         /// <summary>Gets all the loaded textures that are invalidated from <see cref="InvalidatePaths"/>.</summary>
-        /// <remarks><c>lock</c> on use of the value returned from this property.</remarks>
-        [SuppressMessage(
-            "ReSharper",
-            "InconsistentlySynchronizedField",
-            Justification = "Debug use only; users are expected to lock around this")]
+        /// <remarks>Use <see cref="ForDebugInvalidatedTexturesLockScope"/> to read this property.</remarks>
         public ICollection<SharedImmediateTexture> ForDebugInvalidatedTextures => this.invalidatedTextures;
+
+        /// <summary>Gets a lock scope for <see cref="ForDebugInvalidatedTextures"/>.</summary>
+        public Lock.Scope ForDebugInvalidatedTexturesLockScope => this.invalidatedTexturesLock.EnterScope();
 
         private SharedTextureManager NonDisposed =>
             this.disposingCancellationTokenSource.IsCancellationRequested
@@ -191,7 +194,7 @@ internal sealed partial class TextureManager
             {
                 if (r.ReleaseSelfReference(true) != 0)
                 {
-                    lock (this.invalidatedTextures)
+                    using (this.invalidatedTexturesLock.EnterScope())
                         this.invalidatedTextures.Add(r);
                 }
             }
@@ -211,16 +214,12 @@ internal sealed partial class TextureManager
                 RemoveFinalReleased(this.fileDict);
                 RemoveFinalReleased(this.manifestResourceDict);
 
-                // ReSharper disable once InconsistentlySynchronizedField
-                if (this.invalidatedTextures.Count != 0)
-                {
-                    lock (this.invalidatedTextures)
-                        this.invalidatedTextures.RemoveWhere(TextureFinalReleasePredicate);
-                }
+                using (this.invalidatedTexturesLock.EnterScope())
+                    this.invalidatedTextures.RemoveWhere(TextureFinalReleasePredicate);
 
                 try
                 {
-                    this.textureManager.framework.DelayTicks(60).Wait(this.disposingCancellationTokenSource.Token);
+                    this.disposingCancellationTokenSource.Token.WaitHandle.WaitOne(1000);
                 }
                 catch (Exception)
                 {

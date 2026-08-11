@@ -45,14 +45,13 @@ internal static class ServiceManager
 
     [SuppressMessage("ReSharper", "CollectionNeverQueried.Local", Justification = "Debugging purposes")]
     private static readonly List<Type> LoadedServices = [];
+    private static readonly Lock LoadedServicesLock = new();
 #endif
 
     private static readonly TaskCompletionSource BlockingServicesLoadedTaskCompletionSource =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private static readonly CancellationTokenSource UnloadCancellationTokenSource = new();
-
-    private static ManualResetEvent unloadResetEvent = new(false);
 
     private static LoadingDialog loadingDialog = new();
 
@@ -125,7 +124,12 @@ internal static class ServiceManager
     public static CancellationToken UnloadCancellationToken => UnloadCancellationTokenSource.Token;
 
     /// <summary>
-    /// Initializes Provided Services and FFXIVClientStructs.
+    /// Gets a value indicating whether all services have been unloaded.
+    /// </summary>
+    public static bool IsUnloaded { get; private set; }
+
+    /// <summary>
+    /// Initializes provided Services.
     /// </summary>
     /// <param name="dalamud">Instance of <see cref="Dalamud"/>.</param>
     /// <param name="fs">Instance of <see cref="ReliableFileStorage"/>.</param>
@@ -153,7 +157,7 @@ internal static class ServiceManager
         }
 
 #if DEBUG
-        lock (LoadedServices)
+        using (LoadedServicesLock.EnterScope())
         {
             ProvideAllServices();
         }
@@ -375,7 +379,7 @@ internal static class ServiceManager
                     {
                         if (task.IsFaulted)
                             return;
-                        lock (LoadedServices)
+                        using (LoadedServicesLock.EnterScope())
                         {
                             LoadedServices.Add(serviceType);
                         }
@@ -445,14 +449,12 @@ internal static class ServiceManager
     {
         UnloadCancellationTokenSource.Cancel();
 
-        var framework = Service<Framework>.GetNullable(Service<Framework>.ExceptionPropagationMode.None);
+        var framework = Service<Framework>.GetNullable(ExceptionPropagationMode.None);
         if (framework is { IsInFrameworkUpdateThread: false, IsFrameworkUnloading: false })
         {
             framework.RunOnFrameworkThread(UnloadAllServices).Wait();
             return;
         }
-
-        unloadResetEvent.Reset();
 
         var dependencyServicesMap = new Dictionary<Type, IReadOnlyCollection<Type>>();
         var allToUnload = new HashSet<Type>();
@@ -516,21 +518,13 @@ internal static class ServiceManager
         }
 
 #if DEBUG
-        lock (LoadedServices)
+        using (LoadedServicesLock.EnterScope())
         {
             LoadedServices.Clear();
         }
 #endif
 
-        unloadResetEvent.Set();
-    }
-
-    /// <summary>
-    /// Wait until all services have been unloaded.
-    /// </summary>
-    public static void WaitForServiceUnload()
-    {
-        unloadResetEvent.WaitOne();
+        IsUnloaded = true;
     }
 
     /// <summary>

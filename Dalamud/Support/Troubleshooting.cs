@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 using Dalamud.Configuration;
 using Dalamud.Configuration.Internal;
@@ -21,6 +23,9 @@ namespace Dalamud.Support;
 /// </summary>
 public static class Troubleshooting
 {
+    private static PendingTroubleshootingWrite? pendingTroubleshootingWrite;
+    private static int isTroubleshootingWriteRunning;
+
     /// <summary>
     /// Gets the most recent exception to occur.
     /// </summary>
@@ -82,21 +87,55 @@ public static class Troubleshooting
                 LoadAllApiLevels = false,
                 InterfaceLoaded = interfaceManager?.IsReady ?? false,
                 HasThirdRepo = configuration.ThirdRepoList is { Count: > 0 },
-                ForcedMinHook = EnvironmentConfiguration.DalamudForceMinHook,
+                UsingSafetyHook = EnvironmentConfiguration.DalamudUseSafetyHook,
             };
 
             var encodedPayload = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(payload)));
             Log.Information($"TROUBLESHOOTING:{encodedPayload}");
 
-            File.WriteAllText(
-                Path.Join(
-                    startInfo.LogPath,
-                    "dalamud.troubleshooting.json"),
-                JsonConvert.SerializeObject(payload, Formatting.Indented));
+            // Queue the latest payload for async file writing; only one writer task runs at a time.
+            Interlocked.Exchange(
+                ref pendingTroubleshootingWrite,
+                new PendingTroubleshootingWrite(
+                    Path.Join(startInfo.LogPath, "dalamud.troubleshooting.json"),
+                    JsonConvert.SerializeObject(payload, Formatting.Indented)));
+
+            if (Interlocked.CompareExchange(ref isTroubleshootingWriteRunning, 1, 0) == 0)
+            {
+                _ = Task.Run(WriteTroubleshootingFileAsync);
+            }
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Could not print troubleshooting.");
+        }
+    }
+
+    private static async Task WriteTroubleshootingFileAsync()
+    {
+        while (true)
+        {
+            var write = Interlocked.Exchange(ref pendingTroubleshootingWrite, null);
+            if (write is null)
+                break;
+
+            try
+            {
+                var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await File.WriteAllTextAsync(write.Path, (string)write.Json, cts.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Could not write troubleshooting file.");
+            }
+        }
+
+        Interlocked.Exchange(ref isTroubleshootingWriteRunning, 0);
+
+        if (Volatile.Read(ref pendingTroubleshootingWrite) is not null &&
+            Interlocked.CompareExchange(ref isTroubleshootingWriteRunning, 1, 0) == 0)
+        {
+            await WriteTroubleshootingFileAsync();
         }
     }
 
@@ -137,10 +176,12 @@ public static class Troubleshooting
 
         public bool InterfaceLoaded { get; set; }
 
-        public bool ForcedMinHook { get; set; }
+        public bool UsingSafetyHook { get; set; }
 
         public List<ThirdPartyRepoSettings> ThirdRepo => [];
 
         public bool HasThirdRepo { get; set; }
     }
+
+    private record PendingTroubleshootingWrite(string Path, string Json);
 }

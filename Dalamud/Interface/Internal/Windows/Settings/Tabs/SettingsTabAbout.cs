@@ -158,10 +158,12 @@ FFXIVClientStructs ({2})
 Copyright (c) 2021 aers
 Licensed under the MIT License
 
-Lumina by Adam
+Lumina
+by Adam
 Licensed under the WTFPL v2.0
 
-Reloaded Libraries by Sewer56
+Reloaded Libraries
+by Sewer56
 Licensed under the GNU Lesser General Public License v3.0
 
 DotNetCorePlugins
@@ -172,7 +174,8 @@ json
 Copyright (c) 2013-2022 Niels Lohmann
 Licensed under the MIT License
 
-nmd by Nomade040
+nmd
+by Nomade040
 Licensed under the Unlicense
 
 MinHook
@@ -193,6 +196,19 @@ Licensed under the MIT License
 Dual-Kawase-Blur-Demo
 Copyright (c) 2023 Baedrick
 Licensed under the MIT License
+
+mimalloc
+Copyright (c) 2018-2025 Microsoft Corporation, Daan Leijen
+Licensed under the MIT License
+
+libdeflate
+Copyright 2016 Eric Biggers
+Copyright 2024 Google LLC
+Licensed under the MIT License
+
+safetyhook
+by cursey
+Licensed under the Boost Software License
 
 Please see licenses.txt for more information.
 

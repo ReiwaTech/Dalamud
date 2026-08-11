@@ -309,7 +309,7 @@ internal sealed partial class FontAtlasFactory
             this.factory.BackendTask.ContinueWith(
                 r =>
                 {
-                    lock (this.syncRoot)
+                    using (this.syncRoot.EnterScope())
                     {
                         if (this.disposed)
                             return;
@@ -328,7 +328,7 @@ internal sealed partial class FontAtlasFactory
         /// </summary>
         ~DalamudFontAtlas()
         {
-            lock (this.syncRoot)
+            using (this.syncRoot.EnterScope())
             {
                 this.buildTask.ToDisposableIgnoreExceptions().Dispose();
                 this.builtData?.Release();
@@ -359,7 +359,7 @@ internal sealed partial class FontAtlasFactory
         {
             get
             {
-                lock (this.syncRoot)
+                using (this.syncRoot.EnterScope())
                     return this.builtData?.Atlas ?? default;
             }
         }
@@ -386,7 +386,7 @@ internal sealed partial class FontAtlasFactory
 
             try
             {
-                lock (this.syncRoot)
+                using (this.syncRoot.EnterScope())
                 {
                     this.disposed = true;
                     this.buildTask.ToDisposableIgnoreExceptions().Dispose();
@@ -446,6 +446,9 @@ internal sealed partial class FontAtlasFactory
         /// <inheritdoc/>
         public void BuildFontsOnNextFrame()
         {
+            if (this.factory.cancellationTokenSource.IsCancellationRequested)
+                return;
+
             if (this.AutoRebuildMode == FontAtlasAutoRebuildMode.Async)
             {
                 throw new InvalidOperationException(
@@ -467,6 +470,9 @@ internal sealed partial class FontAtlasFactory
         /// <inheritdoc/>
         public void BuildFontsImmediately()
         {
+            if (this.factory.cancellationTokenSource.IsCancellationRequested)
+                return;
+
 #if VeryVerboseLog
             Log.Verbose("[{name}] Called: {source}.", this.Name, nameof(this.BuildFontsImmediately));
 #endif
@@ -483,7 +489,7 @@ internal sealed partial class FontAtlasFactory
             try
             {
                 var rebuildIndex = Interlocked.Increment(ref this.buildIndex);
-                lock (this.syncRoot)
+                using (this.syncRoot.EnterScope())
                 {
                     if (!this.buildTask.IsCompleted)
                         throw new InvalidOperationException("Font rebuild is already in progress.");
@@ -497,7 +503,7 @@ internal sealed partial class FontAtlasFactory
 
                 var scale = this.IsGlobalScaled ? ImGuiHelpers.GlobalScale : 1f;
                 var r = this.RebuildFontsPrivate(false, scale);
-                r.Wait();
+                r.Wait(this.factory.cancellationTokenSource.Token);
                 if (r.IsCompletedSuccessfully)
                 {
                     this.PromoteBuiltData(rebuildIndex, r.Result, nameof(this.BuildFontsImmediately));
@@ -523,6 +529,9 @@ internal sealed partial class FontAtlasFactory
         /// <inheritdoc/>
         public Task BuildFontsAsync()
         {
+            if (this.factory.cancellationTokenSource.IsCancellationRequested)
+                return Task.CompletedTask;
+
 #if VeryVerboseLog
             Log.Verbose("[{name}] Called: {source}.", this.Name, nameof(this.BuildFontsAsync));
 #endif
@@ -535,16 +544,16 @@ internal sealed partial class FontAtlasFactory
                     $"{nameof(FontAtlasAutoRebuildMode.OnNewFrame)}.");
             }
 
-            lock (this.syncRoot)
+            using (this.syncRoot.EnterScope())
             {
                 var scale = this.IsGlobalScaled ? ImGuiHelpers.GlobalScale : 1f;
                 var rebuildIndex = Interlocked.Increment(ref this.buildIndex);
-                return this.buildTask = this.buildTask.ContinueWith(BuildInner).Unwrap();
+                return this.buildTask = this.buildTask.ContinueWith(BuildInner, this.factory.cancellationTokenSource.Token).Unwrap();
 
                 async Task<FontAtlasBuiltData?> BuildInner(Task<FontAtlasBuiltData> unused)
                 {
                     Log.Verbose("[{name}] Building from {source}.", this.Name, nameof(this.BuildFontsAsync));
-                    lock (this.syncRoot)
+                    using (this.syncRoot.EnterScope())
                     {
                         if (this.buildIndex != rebuildIndex)
                             return null;
@@ -567,7 +576,7 @@ internal sealed partial class FontAtlasFactory
             var fontsAndLocks = new List<(FontHandle FontHandle, ILockedImFont Lock)>();
             using var garbage = new DisposeSafety.ScopedFinalizer();
 
-            lock (this.syncRoot)
+            using (this.syncRoot.EnterScope())
             {
                 if (this.buildIndex != rebuildIndex)
                 {
@@ -629,10 +638,12 @@ internal sealed partial class FontAtlasFactory
 
         private async Task<FontAtlasBuiltData> RebuildFontsPrivateReal(bool isAsync, float scale)
         {
-            lock (this.syncRoot)
+            using (this.syncRoot.EnterScope())
             {
                 // this lock ensures that this.buildTask is properly set.
             }
+
+            this.factory.cancellationTokenSource.Token.ThrowIfCancellationRequested();
 
             var sw = new Stopwatch();
             sw.Start();
