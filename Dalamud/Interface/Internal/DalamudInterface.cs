@@ -146,13 +146,19 @@ internal class DalamudInterface : IInternalDisposableService
             gameGui,
             titleScreenMenu,
             consoleManager,
-            addonLifecycle) { IsOpen = false };
+            addonLifecycle)
+        {
+            IsOpen = false,
+        };
         this.changelogWindow = new ChangelogWindow(
             this.titleScreenMenuWindow,
             fontAtlasFactory,
             dalamudAssetManager,
             gameGui,
-            framework) { IsOpen = false };
+            framework)
+        {
+            IsOpen = false,
+        };
         this.profilerWindow = new ProfilerWindow() { IsOpen = false };
         this.branchSwitcherWindow = new BranchSwitcherWindow() { IsOpen = false };
         this.hitchSettingsWindow = new HitchSettingsWindow() { IsOpen = false };
@@ -756,6 +762,12 @@ internal class DalamudInterface : IInternalDisposableService
     {
         var condition = Service<Condition>.Get();
 
+        var windowPos = ImGui.GetMainViewport().Pos + new Vector2(20);
+
+        using var style = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        style.Push(ImGuiStyleVar.WindowBorderSize, 0);
+        style.Push(ImGuiStyleVar.FrameBorderSize, 0);
+
         if (!this.isImGuiDrawDevMenu && !condition.Any())
         {
             using var color = ImRaii.PushColor(ImGuiCol.Button, Vector4.Zero);
@@ -766,11 +778,6 @@ internal class DalamudInterface : IInternalDisposableService
             color.Push(ImGuiCol.BorderShadow, new Vector4(0, 0, 0, 1));
             color.Push(ImGuiCol.WindowBg, new Vector4(0, 0, 0, 1));
 
-            using var style = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-            style.Push(ImGuiStyleVar.WindowBorderSize, 0);
-            style.Push(ImGuiStyleVar.FrameBorderSize, 0);
-
-            var windowPos = ImGui.GetMainViewport().Pos + new Vector2(20);
             ImGui.SetNextWindowPos(windowPos, ImGuiCond.Always);
             ImGui.SetNextWindowBgAlpha(1);
 
@@ -783,7 +790,7 @@ internal class DalamudInterface : IInternalDisposableService
 
             ImGui.End();
 
-            if (EnvironmentConfiguration.DalamudUseSafetyHook)
+            if (EnvironmentConfiguration.DalamudUseSafetyHook || Util.IsAppContainer())
             {
                 ImGui.SetNextWindowPos(windowPos, ImGuiCond.Always);
                 ImGui.SetNextWindowBgAlpha(1);
@@ -795,7 +802,11 @@ internal class DalamudInterface : IInternalDisposableService
                         ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoMouseInputs |
                         ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoSavedSettings))
                 {
-                    ImGui.TextColoredWrapped(ImGuiColors.AttentionForeground, "sh!"u8);
+                    if (EnvironmentConfiguration.DalamudUseSafetyHook)
+                        ImGui.TextColoredWrapped(ImGuiColors.AttentionForeground, "sh!"u8);
+
+                    if (Util.IsAppContainer())
+                        ImGui.TextColoredWrapped(ImGuiColors.AttentionForeground, "ac!"u8);
                 }
 
                 ImGui.End();
@@ -1227,9 +1238,9 @@ internal class DalamudInterface : IInternalDisposableService
                     ImGui.PushFont(InterfaceManager.MonoFont);
 
                     ImGui.BeginMenu($"{Versioning.GetActiveTrack() ?? "???"} on {Versioning.GetGitBranch() ?? "???"}", false);
-                    ImGui.BeginMenu($"{Versioning.GetScmVersion()}", false);
-                    ImGui.BeginMenu(this.FrameCount.ToString("000000"), false);
-                    ImGui.BeginMenu(ImGui.GetIO().Framerate.ToString("000"), false);
+                    ImGui.BeginMenu(Versioning.GetScmVersion(), false);
+                    ImGui.BeginMenu(this.FrameCount.ToString("000000", CultureInfo.InvariantCulture), false);
+                    ImGui.BeginMenu(ImGui.GetIO().Framerate.ToString("000", CultureInfo.InvariantCulture), false);
                     ImGui.BeginMenu($"W:{Util.FormatBytes(GC.GetTotalMemory(false))}", false);
 
                     var videoMem = this.interfaceManager.GetD3dMemoryInfo();

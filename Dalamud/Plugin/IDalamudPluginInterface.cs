@@ -28,13 +28,13 @@ public interface IDalamudPluginInterface : IServiceProvider
     /// Delegate for localization change with two-letter iso lang code.
     /// </summary>
     /// <param name="langCode">The new language code.</param>
-    public delegate void LanguageChangedDelegate(string langCode);
+    delegate void LanguageChangedDelegate(string langCode);
 
     /// <summary>
     /// Delegate for events that listen to changes to the list of active plugins.
     /// </summary>
     /// <param name="args">The event arguments containing information about the change.</param>
-    public delegate void ActivePluginsChangedDelegate(IActivePluginsChangedEventArgs args);
+    delegate void ActivePluginsChangedDelegate(IActivePluginsChangedEventArgs args);
 
     /// <summary>
     /// Event that gets fired when loc is changed
@@ -69,6 +69,11 @@ public interface IDalamudPluginInterface : IServiceProvider
     /// Gets the current internal plugin name.
     /// </summary>
     string InternalName { get; }
+
+    /// <summary> 
+    /// Gets the unique working plugin ID set by Dalamud.
+    /// </summary>
+    Guid WorkingPluginId { get; }
 
     /// <summary>
     /// Gets the plugin's manifest.

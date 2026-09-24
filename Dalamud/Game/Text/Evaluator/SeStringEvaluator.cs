@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -313,6 +312,8 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
     private unsafe bool TryResolveSetResetTime(in SeStringContext context, in ReadOnlySePayloadSpan payload)
     {
+        ThreadSafety.AssertMainThread("The macro setresettime may only be used from the main thread.");
+
         var enu = payload.GetEnumerator();
 
         if (!enu.MoveNext() || !this.TryResolveInt(in context, enu.Current, out var eHourVal))
@@ -372,6 +373,8 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
     private unsafe bool TryResolveSetTime(in SeStringContext context, in ReadOnlySePayloadSpan payload)
     {
+        ThreadSafety.AssertMainThread("The macro settime may only be used from the main thread.");
+
         if (!payload.TryGetExpression(out var eTime) || !this.TryResolveUInt(in context, eTime, out var eTimeVal))
             return false;
 
@@ -415,6 +418,8 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
     private unsafe bool TryResolveSwitchPlatform(in SeStringContext context, in ReadOnlySePayloadSpan payload)
     {
+        ThreadSafety.AssertMainThread("The macro switchplatform may only be used from the main thread.");
+
         if (!payload.TryGetExpression(out var expr1))
             return false;
 
@@ -435,6 +440,8 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
     private unsafe bool TryResolvePcName(in SeStringContext context, in ReadOnlySePayloadSpan payload)
     {
+        ThreadSafety.AssertMainThread("The macro pcname may only be used from the main thread.");
+
         if (!payload.TryGetExpression(out var eEntityId))
             return false;
 
@@ -446,10 +453,10 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
         NameCache.CharacterInfo characterInfo = default;
         if (NameCache.Instance()->TryGetCharacterInfoByEntityId(entityId, &characterInfo))
         {
-            context.Builder.Append((ReadOnlySeStringSpan)characterInfo.Name.AsSpan());
+            context.Builder.Append(characterInfo.Name.AsReadOnlySeStringSpan());
 
             if (characterInfo.HomeWorldId != AgentLobby.Instance()->LobbyData.HomeWorldId &&
-                WorldHelper.Instance()->AllWorlds.TryGetValue((ushort)characterInfo.HomeWorldId, out var world, false))
+                WorldHelper.Instance()->AllWorlds.TryGetValue(characterInfo.HomeWorldId, out var world, false))
             {
                 context.Builder.AppendIcon(88);
 
@@ -469,6 +476,8 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
     private unsafe bool TryResolveIfPcGender(in SeStringContext context, in ReadOnlySePayloadSpan payload)
     {
+        ThreadSafety.AssertMainThread("The macro ifpcgender may only be used from the main thread.");
+
         if (!payload.TryGetExpression(out var eEntityId, out var eMale, out var eFemale))
             return false;
 
@@ -486,6 +495,8 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
     private unsafe bool TryResolveIfPcName(in SeStringContext context, in ReadOnlySePayloadSpan payload)
     {
+        ThreadSafety.AssertMainThread("The macro ifpcname may only be used from the main thread.");
+
         if (!payload.TryGetExpression(out var eEntityId, out var eName, out var eTrue, out var eFalse))
             return false;
 
@@ -503,7 +514,7 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
                        : eFalse);
     }
 
-    private unsafe bool TryResolveIfSelf(in SeStringContext context, in ReadOnlySePayloadSpan payload)
+    private bool TryResolveIfSelf(in SeStringContext context, in ReadOnlySePayloadSpan payload)
     {
         if (!payload.TryGetExpression(out var eEntityId, out var eTrue, out var eFalse))
             return false;
@@ -842,13 +853,13 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
     private void AddSheetRedirectItemDecoration(in SeStringContext context, ref ReadOnlySeString text, SheetRedirectFlags flags, uint eRowIdValue)
     {
-        if (!flags.HasFlag(SheetRedirectFlags.Item))
+        if ((flags & SheetRedirectFlags.Item) == 0)
             return;
 
         var rarity = 1u;
         var skipLink = false;
 
-        if (flags.HasFlag(SheetRedirectFlags.EventItem))
+        if ((flags & SheetRedirectFlags.EventItem) != 0)
         {
             rarity = 8;
             skipLink = true;
@@ -866,11 +877,11 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
                 skipLink = true;
         }
 
-        if (flags.HasFlag(SheetRedirectFlags.Collectible))
+        if ((flags & SheetRedirectFlags.Collectible) != 0)
         {
             itemId += 500000;
         }
-        else if (flags.HasFlag(SheetRedirectFlags.HighQuality))
+        else if ((flags & SheetRedirectFlags.HighQuality) != 0)
         {
             itemId += 1000000;
         }
@@ -890,12 +901,12 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
         sb.Append(text);
 
-        if (flags.HasFlag(SheetRedirectFlags.HighQuality)
+        if ((flags & SheetRedirectFlags.HighQuality) != 0
             && this.dataManager.GetExcelSheet<AddonSheet>(context.Language).TryGetRow(9, out var hqSymbol))
         {
             sb.Append(hqSymbol.Text);
         }
-        else if (flags.HasFlag(SheetRedirectFlags.Collectible)
+        else if ((flags & SheetRedirectFlags.Collectible) != 0
             && this.dataManager.GetExcelSheet<AddonSheet>(context.Language).TryGetRow(150, out var collectibleSymbol))
         {
             sb.Append(collectibleSymbol.Text);
@@ -959,6 +970,18 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
             case "MKDLore":
                 context.Builder.PushLink(LinkMacroPayloadType.MKDLore, eRowIdValue, 0u, 0u, text.AsSpan());
+                context.Builder.Append(text);
+                context.Builder.PopLink();
+                return;
+
+            case "EventTutorial":
+                context.Builder.PushLink(LinkMacroPayloadType.EventTutorial, eRowIdValue, 0u, 0u, text.AsSpan());
+                context.Builder.Append(text);
+                context.Builder.PopLink();
+                return;
+
+            case "Emote":
+                context.Builder.PushLink(LinkMacroPayloadType.Emote, eRowIdValue, 0u, 0u, text.AsSpan());
                 context.Builder.Append(text);
                 context.Builder.PopLink();
                 return;
@@ -1141,6 +1164,8 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
     private unsafe bool TryResolveFixedPlayerLink(in SeStringContext context, ref ReadOnlySePayloadSpan.Enumerator enu)
     {
+        ThreadSafety.AssertMainThread("The fixed player link macro may only be used from the main thread.");
+
         if (!enu.MoveNext() || !this.TryResolveUInt(in context, enu.Current, out var worldId))
             return false;
 
@@ -1162,7 +1187,7 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
             context.Builder.Append(playerName);
         }
 
-        if (worldId == AgentLobby.Instance()->LobbyData.HomeWorldId)
+        if (worldId == this.playerState.HomeWorld.RowId)
             return true;
 
         if (!this.dataManager.GetExcelSheet<World>(context.Language).TryGetRow(worldId, out var worldRow))
@@ -1264,10 +1289,13 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
             2 => 13743u, // "(Unable to set map link)"
             _ => 0u,
         };
+
         if (rowId == 0u)
             return false;
+
         if (this.dataManager.GetExcelSheet<AddonSheet>(context.Language).TryGetRow(rowId, out var addonRow))
             context.Builder.Append(addonRow.Text);
+
         return true;
     }
 
@@ -1459,6 +1487,8 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
     private bool TryResolveFixedQuestLink(in SeStringContext context, ref ReadOnlySePayloadSpan.Enumerator enu)
     {
+        // ThreadSafety.AssertMainThread("The fixed quest link macro may only be used from the main thread.");
+
         if (!enu.MoveNext() || !this.TryResolveUInt(in context, enu.Current, out var questId))
             return false;
 
@@ -1661,9 +1691,7 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
         if (!this.ResolveStringExpression(headContext, eStr))
             return false;
 
-        var str = rssb.Builder.ToReadOnlySeString();
-
-        foreach (var p in str)
+        foreach (var p in rssb.Builder.ToReadOnlySeString())
         {
             if (p.Type == ReadOnlySePayloadType.Invalid)
                 continue;
@@ -1737,7 +1765,7 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
                 Quantity = eAmountVal,
                 ArticleType = eArticleTypeVal,
                 GrammaticalCase = eCaseVal - 1,
-                IsActionSheet = flags.HasFlag(SheetRedirectFlags.Action),
+                IsActionSheet = (flags & SheetRedirectFlags.Action) != 0,
             }));
 
         return true;
@@ -1869,11 +1897,11 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
     {
         value = 0u;
 
+        ThreadSafety.AssertMainThread("Global parameters may only be used from the main thread.");
+
         var rtm = RaptureTextModule.Instance();
         if (rtm is null)
             return false;
-
-        ThreadSafety.AssertMainThread("Global parameters may only be used from the main thread.");
 
         ref var gp = ref rtm->TextModule.MacroDecoder.GlobalParameters;
         if (parameterIndex >= gp.MySize)
@@ -1905,6 +1933,8 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
     private unsafe bool TryProduceGStrDefault(SeStringBuilder builder, ClientLanguage language, uint parameterIndex)
     {
+        ThreadSafety.AssertMainThread("Global parameters may only be used from the main thread.");
+
         var rtm = RaptureTextModule.Instance();
         if (rtm is null)
             return false;
@@ -1912,12 +1942,6 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
         ref var gp = ref rtm->TextModule.MacroDecoder.GlobalParameters;
         if (parameterIndex >= gp.MySize)
             return false;
-
-        if (!ThreadSafety.IsMainThread)
-        {
-            Log.Error("Global parameters may only be used from the main thread.");
-            return false;
-        }
 
         var p = rtm->TextModule.MacroDecoder.GlobalParameters[parameterIndex];
         switch (p.Type)
@@ -1932,11 +1956,11 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
                     p.ReferencedUtf8StringValue->Utf8String.AsSpan(),
                     null,
                     language);
-                return false;
+                return true;
 
             case TextParameterType.String:
                 this.EvaluateAndAppendTo(builder, p.StringValue.AsSpan(), null, language);
-                return false;
+                return true;
 
             case TextParameterType.Uninitialized:
             default:
@@ -1952,6 +1976,8 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
 
         if (expression.TryGetPlaceholderExpression(out var exprType))
         {
+            ThreadSafety.AssertMainThread("Placeholder expressions may only be used from the main thread.");
+
             // if (context.TryGetPlaceholderNum(exprType, out value))
             //     return true;
 
@@ -2037,30 +2063,28 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
                         return true;
                     }
 
-                    if (operand1.TryGetString(out var strval1) && operand2.TryGetString(out var strval2))
                     {
                         using var rssb1 = new RentedSeStringBuilder();
+                        var context1 = new SeStringContext(rssb1.Builder, context.LocalParameters, context.Language);
+
+                        if (!this.ResolveStringExpression(context1, operand1))
+                            return false;
+
                         using var rssb2 = new RentedSeStringBuilder();
-                        var resolvedStr1 = this.EvaluateAndAppendTo(
-                            rssb1.Builder,
-                            strval1,
-                            context.LocalParameters,
-                            context.Language);
-                        var resolvedStr2 = this.EvaluateAndAppendTo(
-                            rssb2.Builder,
-                            strval2,
-                            context.LocalParameters,
-                            context.Language);
-                        var equals = resolvedStr1.GetViewAsSpan().SequenceEqual(resolvedStr2.GetViewAsSpan());
+                        var context2 = new SeStringContext(rssb2.Builder, context.LocalParameters, context.Language);
+
+                        if (!this.ResolveStringExpression(context2, operand2))
+                            return false;
+
+                        var str1 = context1.Builder.ToReadOnlySeString();
+                        var str2 = context2.Builder.ToReadOnlySeString();
+                        var equals = str1.Equals(str2);
 
                         if ((ExpressionType)exprType == ExpressionType.Equal)
                             value = equals ? 1u : 0u;
                         else
                             value = equals ? 0u : 1u;
-                        return true;
                     }
-
-                    // compare int with string, string with int??
 
                     return true;
 
@@ -2072,6 +2096,11 @@ internal class SeStringEvaluator : IServiceType, ISeStringEvaluator
         if (expression.TryGetString(out var str))
         {
             var evaluatedStr = this.Evaluate(str, context.LocalParameters, context.Language);
+
+            if (evaluatedStr.IsTextOnly())
+            {
+                return uint.TryParse(evaluatedStr, out value);
+            }
 
             foreach (var payload in evaluatedStr)
             {

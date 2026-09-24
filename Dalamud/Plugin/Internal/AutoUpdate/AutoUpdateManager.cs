@@ -9,7 +9,6 @@ using Dalamud.Configuration.Internal;
 using Dalamud.Console;
 using Dalamud.Game;
 using Dalamud.Game.ClientState;
-using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Gui;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
@@ -371,7 +370,7 @@ internal class AutoUpdateManager : IServiceType
 
             var failedPlugins = pluginStates
                                 .Where(x => x.Status != PluginUpdateStatus.StatusKind.Success)
-                                .Select(x => x.Name).ToList();
+                                .Select(x => x.AffectedPlugin.Name).ToList();
 
             notification.Content += "\n" + Locs.NotificationContentFailedPlugins(failedPlugins);
         }

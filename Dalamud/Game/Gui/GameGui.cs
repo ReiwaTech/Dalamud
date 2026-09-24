@@ -11,7 +11,6 @@ using Dalamud.Logging.Internal;
 using Dalamud.Plugin.Services;
 using Dalamud.Utility;
 
-using FFXIVClientStructs.FFXIV.Client.Enums;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Kernel;
@@ -183,7 +182,7 @@ internal sealed unsafe class GameGui : IInternalDisposableService, IGameGui
     /// <inheritdoc/>
     public UIModulePtr GetUIModule()
     {
-        return (nint)UIModule.Instance();
+        return UIModule.Instance();
     }
 
     /// <inheritdoc/>
@@ -193,11 +192,25 @@ internal sealed unsafe class GameGui : IInternalDisposableService, IGameGui
         if (unitManager == null)
             return 0;
 
-        return (nint)unitManager->GetAddonByName(name, index);
+        return unitManager->GetAddonByName(name, index);
+    }
+
+    /// <inheritdoc/>
+    public AtkUnitBasePtr GetAddonByName(ReadOnlySpan<byte> name, int index = 1)
+    {
+        var unitManager = RaptureAtkUnitManager.Instance();
+        if (unitManager == null)
+            return 0;
+
+        return unitManager->GetAddonByName(name, index);
     }
 
     /// <inheritdoc/>
     public T* GetAddonByName<T>(string name, int index = 1) where T : unmanaged
+        => (T*)this.GetAddonByName(name, index).Address;
+
+    /// <inheritdoc/>
+    public T* GetAddonByName<T>(ReadOnlySpan<byte> name, int index = 1) where T : unmanaged
         => (T*)this.GetAddonByName(name, index).Address;
 
     /// <inheritdoc/>
@@ -207,11 +220,18 @@ internal sealed unsafe class GameGui : IInternalDisposableService, IGameGui
         if (agentModule == null || id < 0 || id >= agentModule->Agents.Length)
             return 0;
 
-        return (nint)agentModule->Agents[id].Value;
+        return agentModule->Agents[id].Value;
     }
 
     /// <inheritdoc/>
     public AgentInterfacePtr FindAgentInterface(string addonName)
+    {
+        var addon = this.GetAddonByName(addonName);
+        return this.FindAgentInterface(addon);
+    }
+
+    /// <inheritdoc/>
+    public AgentInterfacePtr FindAgentInterface(ReadOnlySpan<byte> addonName)
     {
         var addon = this.GetAddonByName(addonName);
         return this.FindAgentInterface(addon);
@@ -234,7 +254,7 @@ internal sealed unsafe class GameGui : IInternalDisposableService, IGameGui
         foreach (AgentInterface* agent in agentModule->Agents)
         {
             if (agent != null && agent->AddonId == addonId)
-                return (nint)agent;
+                return agent;
         }
 
         return 0;
@@ -477,8 +497,16 @@ internal class GameGuiPluginScoped : IInternalDisposableService, IGameGui
         => this.gameGuiService.GetAddonByName(name, index);
 
     /// <inheritdoc/>
+    public AtkUnitBasePtr GetAddonByName(ReadOnlySpan<byte> name, int index = 1)
+        => this.gameGuiService.GetAddonByName(name, index);
+
+    /// <inheritdoc/>
     public unsafe T* GetAddonByName<T>(string name, int index = 1) where T : unmanaged
-        => (T*)this.gameGuiService.GetAddonByName(name, index).Address;
+        => this.gameGuiService.GetAddonByName<T>(name, index);
+
+    /// <inheritdoc/>
+    public unsafe T* GetAddonByName<T>(ReadOnlySpan<byte> name, int index = 1) where T : unmanaged
+        => this.gameGuiService.GetAddonByName<T>(name, index);
 
     /// <inheritdoc/>
     public AgentInterfacePtr GetAgentById(int id)
@@ -486,6 +514,10 @@ internal class GameGuiPluginScoped : IInternalDisposableService, IGameGui
 
     /// <inheritdoc/>
     public AgentInterfacePtr FindAgentInterface(string addonName)
+        => this.gameGuiService.FindAgentInterface(addonName);
+
+    /// <inheritdoc/>
+    public AgentInterfacePtr FindAgentInterface(ReadOnlySpan<byte> addonName)
         => this.gameGuiService.FindAgentInterface(addonName);
 
     /// <inheritdoc/>

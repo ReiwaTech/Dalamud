@@ -630,33 +630,31 @@ internal class PluginInstallerWindow : Window, IDisposable
                     ImGuiHelpers.CenteredText("Installing plugin...");
                     break;
                 case LoadingIndicatorKind.Manager:
+                    if (pluginManager.PluginsReady && !pluginManager.ReposReady)
                     {
-                        if (pluginManager.PluginsReady && !pluginManager.ReposReady)
-                        {
-                            ImGuiHelpers.CenteredText("Loading repositories...");
-                            ImGuiHelpers.ScaledDummy(10);
+                        ImGuiHelpers.CenteredText("Loading repositories...");
+                        ImGuiHelpers.ScaledDummy(10);
 
-                            DrawProgressBar(pluginManager.Repos, x => x.State != PluginRepositoryState.Success &&
-                                                                      x.State != PluginRepositoryState.Fail &&
-                                                                      x.IsEnabled,
-                                            x => x.IsEnabled,
-                                            x => ImGuiHelpers.CenteredText($"Loading {x.PluginMasterUrl}"));
-                        }
-                        else if (!pluginManager.PluginsReady && pluginManager.ReposReady)
-                        {
-                            ImGuiHelpers.CenteredText("Loading installed plugins...");
-                            ImGuiHelpers.ScaledDummy(10);
+                        DrawProgressBar(pluginManager.Repos, x => x.State != PluginRepositoryState.Success &&
+                                                                  x.State != PluginRepositoryState.Fail &&
+                                                                  x.IsEnabled,
+                                        x => x.IsEnabled,
+                                        x => ImGuiHelpers.CenteredText($"Loading {x.PluginMasterUrl}"));
+                    }
+                    else if (!pluginManager.PluginsReady && pluginManager.ReposReady)
+                    {
+                        ImGuiHelpers.CenteredText("Loading installed plugins...");
+                        ImGuiHelpers.ScaledDummy(10);
 
-                            DrawProgressBar(pluginManager.InstalledPlugins, x => x.State == PluginState.Loading,
-                                            x => x.State is PluginState.Loaded or
-                                                     PluginState.LoadError or
-                                                     PluginState.Loading,
-                                            x => ImGuiHelpers.CenteredText($"Loading {x.Name}"));
-                        }
-                        else
-                        {
-                            ImGuiHelpers.CenteredText("Loading repositories and plugins...");
-                        }
+                        DrawProgressBar(pluginManager.InstalledPlugins, x => x.State == PluginState.Loading,
+                                        x => x.State is PluginState.Loaded or
+                                                 PluginState.LoadError or
+                                                 PluginState.Loading,
+                                        x => ImGuiHelpers.CenteredText($"Loading {x.Name}"));
+                    }
+                    else
+                    {
+                        ImGuiHelpers.CenteredText("Loading repositories and plugins...");
                     }
 
                     break;
@@ -1001,7 +999,7 @@ internal class PluginInstallerWindow : Window, IDisposable
                                                        : Locs.ErrorModal_UpdaterFail(errorPluginCount);
 
                                 var hintInsert = errorPlugins
-                                                 .Aggregate(string.Empty, (current, pluginUpdateStatus) => $"{current}* {pluginUpdateStatus.InternalName} ({PluginUpdateStatus.LocalizeUpdateStatusKind(pluginUpdateStatus.Status)})\n")
+                                                 .Aggregate(string.Empty, (current, pluginUpdateStatus) => $"{current}* {pluginUpdateStatus.AffectedPlugin.InternalName} ({PluginUpdateStatus.LocalizeUpdateStatusKind(pluginUpdateStatus.Status)})\n")
                                                  .TrimEnd();
                                 errorMessage += Locs.ErrorModal_HintBlame(hintInsert);
 
@@ -1556,7 +1554,7 @@ internal class PluginInstallerWindow : Window, IDisposable
         var configuration = Service<DalamudConfiguration>.Get();
         var favoriteList = configuration.FavoritePluginInternalName;
         var filteredList = pluginList
-                           // Filter out plugins that don't match the search if any
+                          // Filter out plugins that don't match the search if any
                           .Where(plugin => !this.IsManifestFiltered(plugin.Manifest))
                           .Where(plugin => !applyPluginFilters || !this.IsInstalledPluginFiltered(plugin, false))
                           .ToList();
@@ -2926,7 +2924,7 @@ internal class PluginInstallerWindow : Window, IDisposable
         var thisWasUpdated = false;
         if (this.updatedPlugins != null && !plugin.IsDev)
         {
-            var update = this.updatedPlugins.FirstOrDefault(update => update.InternalName == plugin.Manifest.InternalName);
+            var update = this.updatedPlugins.FirstOrDefault(update => update.AffectedPlugin.InternalName == plugin.Manifest.InternalName);
             if (update != null)
             {
                 if (update.Status == PluginUpdateStatus.StatusKind.Success)
@@ -3244,6 +3242,22 @@ internal class PluginInstallerWindow : Window, IDisposable
                 // Resort plugins to update pinned order
                 this.ResortPlugins();
             }
+
+            ImGui.Separator();
+
+            // Open plugin folder
+            if (configuration.DevMode == true && ImGui.MenuItem(Locs.PluginContext_OpenPluginFolder))
+                Util.OpenLink(plugin.DllFile.Directory.ToString());
+
+            // Open config file
+            var configFile = pluginManager.PluginConfigs.GetConfigFile(plugin.InternalName);
+            if (configFile.Exists && ImGui.MenuItem(Locs.PluginContext_OpenConfigFile))
+                Util.OpenLink(configFile.ToString());
+
+            // Open config folder
+            var configDir = pluginManager.PluginConfigs.GetConfigDirectory(plugin.InternalName);
+            if (configDir.Exists && ImGui.MenuItem(Locs.PluginContext_OpenConfigFolder))
+                Util.OpenLink(configDir.ToString());
 
             ImGui.Separator();
 
@@ -4502,6 +4516,12 @@ internal class PluginInstallerWindow : Window, IDisposable
 
         public static string PluginContext_UnpinPlugin => Loc.Localize("InstallerUnpinPlugin", "Unpin from top");
 
+        public static string PluginContext_OpenConfigFile => Loc.Localize("InstallerOpenConfigFile", "Open config file");
+
+        public static string PluginContext_OpenConfigFolder => Loc.Localize("InstallerOpenConfigFolder", "Open config folder");
+
+        public static string PluginContext_OpenPluginFolder => Loc.Localize("InstallerOpenPluginFolder", "Open plugin folder");
+
         #endregion
 
         #region Plugin body
@@ -4637,7 +4657,7 @@ internal class PluginInstallerWindow : Window, IDisposable
 
         public static string Notifications_UpdatesInstalled(List<PluginUpdateStatus> updates)
             => Loc.Localize("NotificationsUpdatesInstalled", "Updates for {0} of your plugins were installed.\n\n{1}")
-                  .Format(updates.Count, string.Join(", ", updates.Select(x => x.InternalName)));
+                  .Format(updates.Count, string.Join(", ", updates.Select(x => x.AffectedPlugin.InternalName)));
 
         public static string Notifications_PluginDisabledTitle => Loc.Localize("NotificationsPluginDisabledTitle", "Plugin disabled!");
 

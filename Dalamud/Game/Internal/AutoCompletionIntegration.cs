@@ -1,8 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 
 using Dalamud.Game.Command;
 using Dalamud.Hooking;
+using Dalamud.Logging.Internal;
 using Dalamud.Utility;
 
 using FFXIVClientStructs.FFXIV.Client.System.Memory;
@@ -10,6 +12,7 @@ using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.Completion;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using FFXIVClientStructs.Interop;
 
 namespace Dalamud.Game.Internal;
 
@@ -23,6 +26,8 @@ internal sealed unsafe class AutoCompletionIntegration : IInternalDisposableServ
     // as raw strings instead of as lookups into an EXD sheet
     private const int GroupNumber = 0xFF;
 
+    private static readonly ModuleLog Log = ModuleLog.Create<AutoCompletionIntegration>();
+
     [ServiceManager.ServiceDependency]
     private readonly CommandManager commandManager = Service<CommandManager>.Get();
 
@@ -33,7 +38,8 @@ internal sealed unsafe class AutoCompletionIntegration : IInternalDisposableServ
 
     private EntryStrings? dalamudCategory;
 
-    private Hook<AtkTextInput.Delegates.OpenCompletion> openSuggestionsHook;
+    private AsmHook? openSuggestionsHook;
+    private CompletionUpdateDelegate? completionUpdateCallback;
     private Hook<CompletionModule.Delegates.GetSelection>? getSelectionHook;
 
     /// <summary>
@@ -44,6 +50,9 @@ internal sealed unsafe class AutoCompletionIntegration : IInternalDisposableServ
     {
         this.framework.RunOnTick(this.Setup);
     }
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void CompletionUpdateDelegate();
 
     /// <inheritdoc/>
     void IInternalDisposableService.DisposeService()
@@ -70,9 +79,32 @@ internal sealed unsafe class AutoCompletionIntegration : IInternalDisposableServ
 
         this.dalamudCategory = new EntryStrings("【Dalamud】");
 
-        this.openSuggestionsHook = Hook<AtkTextInput.Delegates.OpenCompletion>.FromAddress(
-            (nint)AtkTextInput.MemberFunctionPointers.OpenCompletion,
-            this.OpenSuggestionsDetour);
+        // The CN keyboard completion path is inlined and does not call OpenCompletion.
+        // Use ottercorp's call-site signature, preserving the native state around our callback.
+        var openSuggestionsAddress = Service<TargetSigScanner>.Get().ScanText(
+            "4C 8D 86 ?? ?? ?? ?? 48 8B CE 48 8D 96 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 4E");
+        this.completionUpdateCallback = this.UpdateCompletionDataSafely;
+        var callbackAddress = Marshal.GetFunctionPointerForDelegate(this.completionUpdateCallback);
+        this.openSuggestionsHook = new AsmHook(
+            openSuggestionsAddress,
+            [
+                "use64",
+                "pushfq", "push rax", "push rcx", "push rdx",
+                "push r8", "push r9", "push r10", "push r11",
+                // The call site is 16-byte aligned. Reserve shadow space and save volatile SIMD registers.
+                "sub rsp, 0x80",
+                "movdqu [rsp+0x20], xmm0", "movdqu [rsp+0x30], xmm1",
+                "movdqu [rsp+0x40], xmm2", "movdqu [rsp+0x50], xmm3",
+                "movdqu [rsp+0x60], xmm4", "movdqu [rsp+0x70], xmm5",
+                $"mov rax, 0x{callbackAddress:X}", "call rax",
+                "movdqu xmm0, [rsp+0x20]", "movdqu xmm1, [rsp+0x30]",
+                "movdqu xmm2, [rsp+0x40]", "movdqu xmm3, [rsp+0x50]",
+                "movdqu xmm4, [rsp+0x60]", "movdqu xmm5, [rsp+0x70]",
+                "add rsp, 0x80",
+                "pop r11", "pop r10", "pop r9", "pop r8",
+                "pop rdx", "pop rcx", "pop rax", "popfq",
+            ],
+            "CN command completion");
 
         this.getSelectionHook = Hook<CompletionModule.Delegates.GetSelection>.FromAddress(
             (nint)uiModule->CompletionModule.VirtualTable->GetSelection,
@@ -82,10 +114,16 @@ internal sealed unsafe class AutoCompletionIntegration : IInternalDisposableServ
         this.getSelectionHook.Enable();
     }
 
-    private void OpenSuggestionsDetour(AtkTextInput* thisPtr)
+    private void UpdateCompletionDataSafely()
     {
-        this.UpdateCompletionData();
-        this.openSuggestionsHook!.Original(thisPtr);
+        try
+        {
+            this.UpdateCompletionData();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to update CN command completion data");
+        }
     }
 
     private int GetSelectionDetour(CompletionModule* thisPtr, CategoryData.CompletionDataStruct* dataStructs, int index, Utf8String* outputString, Utf8String* outputDisplayString)
@@ -121,7 +159,7 @@ internal sealed unsafe class AutoCompletionIntegration : IInternalDisposableServ
         if (!commands.Any())
             return;
 
-        var categoryData = (CategoryData*)IMemorySpace.GetDefaultSpace()->Malloc((ulong)sizeof(CategoryData), 0x08);
+        var categoryData = (CategoryData*)IMemorySpace.GetDefaultSpace()->Malloc(CategoryData.StructSize, 0x08);
         categoryData->Ctor(GroupNumber, 0xFF);
 
         uiModule->CompletionModule.AddCategoryData(
@@ -201,7 +239,7 @@ internal sealed unsafe class AutoCompletionIntegration : IInternalDisposableServ
         if (addon == null)
             addon = RaptureAtkUnitManager.Instance()->GetAddonByNode((AtkResNode*)component->OwnerNode);
 
-        return addon != null && addon->NameString == "ChatLog";
+        return addon != null && addon->Name.BeforeNull().SequenceEqual("ChatLog"u8);
     }
 
     private bool HasDalamudCategory()
